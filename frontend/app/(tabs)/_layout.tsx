@@ -1,46 +1,60 @@
-import { SymbolView } from 'expo-symbols';
-import { Link, Tabs } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
-
+import React from 'react';
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useColorScheme, Pressable } from 'react-native';
 import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { Link } from 'expo-router';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useColorScheme() ?? 'light';
+  const themeColors = Colors[colorScheme];
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
+        tabBarActiveTintColor: '#2563EB', // Brand Royal Blue
+        tabBarInactiveTintColor: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280',
+        tabBarStyle: {
+          backgroundColor: themeColors.background,
+          borderTopColor: colorScheme === 'dark' ? '#374151' : '#E5E7EB',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+        },
+        headerStyle: {
+          backgroundColor: themeColors.background,
+        },
+        headerTitleStyle: {
+          fontWeight: '700',
+          color: themeColors.text,
+        },
       }}>
+      {/* 1. Dashboard Tab */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
+          title: 'Dashboard',
+          headerTitle: 'Uni-Calc',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'grid' : 'grid-outline'}
+              size={22}
+              color={String(color)}
             />
           ),
           headerRight: () => (
             <Link href="/modal" asChild>
-              <Pressable style={{ marginRight: 15 }}>
+              <Pressable style={{ marginRight: 16 }}>
                 {({ pressed }) => (
-                  <SymbolView
-                    name={{ ios: 'info.circle', android: 'info', web: 'info' }}
-                    size={25}
-                    tintColor={Colors[colorScheme].text}
-                    style={{ opacity: pressed ? 0.5 : 1 }}
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={24}
+                    color={themeColors.text}
+                    style={{ opacity: pressed ? 0.6 : 1 }}
                   />
                 )}
               </Pressable>
@@ -48,19 +62,50 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      {/* 2. GPA & CGPA Calculator Tab */}
       <Tabs.Screen
-        name="two"
+        name="calculator"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
+          title: 'Calculator',
+          headerTitle: 'GPA Calculator',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'calculator' : 'calculator-outline'}
+              size={22}
+              color={String(color)}
+            />
+          ),
+        }}
+      />
+
+      {/* 3. Academic Semester Planner Tab */}
+      <Tabs.Screen
+        name="planner"
+        options={{
+          title: 'Planner',
+          headerTitle: 'Semester Planner',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'school' : 'school-outline'}
+              size={22}
+              color={String(color)}
+            />
+          ),
+        }}
+      />
+
+      {/* 4. Profile & Settings Tab */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          headerTitle: 'Academic Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'person' : 'person-outline'}
+              size={22}
+              color={String(color)}
             />
           ),
         }}
