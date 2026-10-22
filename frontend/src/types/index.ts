@@ -9,56 +9,61 @@ export type GradeLetter =
   | 'C'
   | 'C-'
   | 'D'
-  | 'F'
-  | 'W' // Withdrawn (doesn't affect GPA)
-  | 'I'; // Incomplete (doesn't affect GPA)
+  | 'F';
+
+export type CourseCategory = 'core' | 'elective' | 'general';
+export type CourseStatus = 'passed' | 'failed' | 'in_progress';
 
 export interface Course {
-  id: string;
-  code: string; // e.g. "CS101"
-  title: string; // e.g. "Introduction to Computer Science"
-  credits: number; // e.g. 3 or 4
-  grade?: GradeLetter; // Awarded grade
-  isRetake?: boolean; // True if repeating an earlier course
-  previousCourseId?: string; // Links to previous attempt
+  id: string; // client id (e.g. 'course-1' or uuid)
+  name: string; // Course title/name e.g. "Introduction to Calculus"
+  credits: number; // e.g. 4
+  grade: string; // e.g. 'A', '4.00', 'B+'
+  category?: CourseCategory; // 'core' | 'elective' | 'general'
+  status?: CourseStatus; // 'passed' | 'failed' | 'in_progress'
+  isRetake?: boolean;
 }
 
 export interface Semester {
-  id: string;
-  name: string; // e.g. "Fall 2025"
-  year: number;
-  season: 'Fall' | 'Spring' | 'Summer' | 'Winter';
+  id: string; // semester client id (e.g. 'sem-default-1')
+  description: string; // e.g. "Year 1, Semester I"
+  number: number; // e.g. 1
   courses: Course[];
-  gpa?: number;
-  totalCredits?: number;
-  earnedCredits?: number;
 }
 
 export interface AcademicProfile {
-  id: string;
-  fullName: string;
+  name: string;
+  studentId: string;
+  major: string;
+  targetCgpa: number;
+  graduationCredits: number;
+  coreCreditsRequired: number;
+  electiveCreditsRequired: number;
+}
+
+export interface User {
+  email: string;
+  name: string;
   studentId?: string;
-  department?: string;
-  targetCGPA?: number;
-  currentCGPA: number;
-  totalEarnedCredits: number;
+  major?: string;
+  targetCgpa?: number;
+  graduationCredits?: number;
 }
 
 export interface Assignment {
   id: string;
-  courseCode: string;
   title: string;
-  dueDate: string;
-  weightPercentage?: number;
-  isCompleted: boolean;
-  score?: number;
-  maxScore?: number;
+  courseName: string;
+  type?: string;
+  dueDate: string | null;
+  completed: boolean;
+  notes?: string;
 }
 
 export interface StudyLog {
   id: string;
-  courseCode: string;
-  durationMinutes: number;
-  date: string;
+  courseName: string;
+  hours: number;
+  logDate: string;
   notes?: string;
 }

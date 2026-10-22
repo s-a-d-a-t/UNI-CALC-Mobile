@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,28 +6,64 @@ import {
   ScrollView,
   TouchableOpacity,
   useColorScheme,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Colors from '@/constants/Colors';
+import { AcademicAPI } from '@/src/api/academic';
+import { calculateGlobalStats, calculateSemesterStats } from '@/src/lib/gpa';
+import { AcademicProfile, Semester, User } from '@/src/types';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
-  // Placeholder initial state (will link to API/Cache in next steps)
-  const [profile] = useState({
-    name: 'Sadat',
-    department: 'Computer Science',
-    cgpa: 3.65,
-    targetCgpa: 3.80,
-    totalCreditsEarned: 68,
-    totalCreditsRequired: 120,
-    activeSemester: 'Fall 2025',
-    activeCoursesCount: 5,
-    currentSemesterGpa: 3.72,
+  const [refreshing, setRefreshing] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<AcademicProfile>({
+    name: 'Student',
+    studentId: '',
+    major: 'General Studies',
+    targetCgpa: 3.5,
+    graduationCredits: 145,
+    coreCreditsRequired: 100,
+    electiveCreditsRequired: 45,
   });
+  const [semesters, setSemesters] = useState<Semester[]>([]);
+
+  const loadData = async () => {
+    try {
+      const [currentUser, userProfile, userSemesters] = await Promise.all([
+        AcademicAPI.getSession(),
+        AcademicAPI.getProfile(),
+        AcademicAPI.getSemesters(),
+      ]);
+      if (currentUser) setUser(currentUser);
+      if (userProfile) setProfile(userProfile);
+      if (userSemesters) setSemesters(userSemesters);
+    } catch (e) {
+      console.warn('Offline or server not reachable:', e);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  // Compute live GPA stats using our accurate engine
+  const globalStats = calculateGlobalStats(semesters);
+  const activeSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null;
+  const activeSemesterStats = activeSemester ? calculateSemesterStats(activeSemester.courses) : null;
 
   const getStandingBadge = (cgpa: number) => {
     if (cgpa >= 3.8) return { label: "Dean's Honor", color: '#10B981', bg: '#D1FAE5' };
@@ -36,28 +72,31 @@ export default function DashboardScreen() {
     return { label: 'Academic Warning', color: '#EF4444', bg: '#FEE2E2' };
   };
 
-  const standing = getStandingBadge(profile.cgpa);
+  const standing = getStandingBadge(globalStats.cgpa);
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#111827' : '#F9FAFB' }]}
-      contentContainerStyle={styles.contentContainer}>
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       
-      {/* Header Welcome */}
+      {/* Header Welcome & Sync Status */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.welcomeSub, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
-            Welcome back,
+            {user ? 'Logged in as' : 'Welcome to Uni-Calc,'}
           </Text>
           <Text style={[styles.welcomeName, { color: theme.text }]}>
-            {profile.name}
+            {profile.name || user?.name || 'Guest Student'}
           </Text>
         </View>
-        <View style={[styles.deptPill, { backgroundColor: colorScheme === 'dark' ? '#374151' : '#E5E7EB' }]}>
+        <TouchableOpacity
+          style={[styles.deptPill, { backgroundColor: colorScheme === 'dark' ? '#374151' : '#E5E7EB' }]}
+          onPress={() => router.push('/modal')}>
           <Text style={[styles.deptText, { color: theme.text }]}>
-            {profile.department}
+            {user ? '● Synced' : 'Sync Account'}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Primary CGPA Highlight Card */}
@@ -71,13 +110,13 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <Text style={styles.cgpaNumber}>{profile.cgpa.toFixed(2)}</Text>
+        <Text style={styles.cgpaNumber}>{globalStats.cgpa.toFixed(2)}</Text>
 
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>Credits Earned</Text>
             <Text style={styles.statValue}>
-              {profile.totalCreditsEarned} / {profile.totalCreditsRequired}
+              {globalStats.totalCredits} / {profile.graduationCredits || 145}
             </Text>
           </View>
 
@@ -85,24 +124,34 @@ export default function DashboardScreen() {
 
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>Target CGPA</Text>
-            <Text style={styles.statValue}>{profile.targetCgpa.toFixed(2)}</Text>
+            <Text style={styles.statValue}>{(profile.targetCgpa || 3.5).toFixed(2)}</Text>
           </View>
         </View>
       </View>
 
       {/* Active Semester Overview */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Active Semester</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Current Term</Text>
       <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}>
-        <View style={styles.semesterRow}>
-          <View>
-            <Text style={[styles.semesterName, { color: theme.text }]}>{profile.activeSemester}</Text>
-            <Text style={styles.semesterMeta}>{profile.activeCoursesCount} Courses Enrolled</Text>
+        {activeSemester ? (
+          <View style={styles.semesterRow}>
+            <View>
+              <Text style={[styles.semesterName, { color: theme.text }]}>
+                {activeSemester.description || `Semester ${activeSemester.number}`}
+              </Text>
+              <Text style={styles.semesterMeta}>
+                {activeSemester.courses?.length || 0} Courses Enrolled
+              </Text>
+            </View>
+            <View style={styles.semesterGpaPill}>
+              <Text style={styles.semesterGpaLabel}>Term GPA</Text>
+              <Text style={styles.semesterGpaVal}>
+                {(activeSemesterStats?.gpa || 0).toFixed(2)}
+              </Text>
+            </View>
           </View>
-          <View style={styles.semesterGpaPill}>
-            <Text style={styles.semesterGpaLabel}>Term GPA</Text>
-            <Text style={styles.semesterGpaVal}>{profile.currentSemesterGpa.toFixed(2)}</Text>
-          </View>
-        </View>
+        ) : (
+          <Text style={{ color: '#6B7280' }}>No semesters recorded yet. Add one in Planner.</Text>
+        )}
       </View>
 
       {/* Quick Action Shortcuts */}
@@ -114,21 +163,20 @@ export default function DashboardScreen() {
           <View style={[styles.actionIconBox, { backgroundColor: '#DBEAFE' }]}>
             <Ionicons name="calculator" size={24} color="#2563EB" />
           </View>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Target GPA</Text>
-          <Text style={styles.actionSubtitle}>Predict needed grades</Text>
+          <Text style={[styles.actionTitle, { color: theme.text }]}>Predictor</Text>
+          <Text style={styles.actionSubtitle}>Target GPA needed</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}
           onPress={() => router.push('/(tabs)/planner')}>
           <View style={[styles.actionIconBox, { backgroundColor: '#D1FAE5' }]}>
-            <Ionicons name="book" size={24} color="#10B981" />
+            <Ionicons name="school" size={24} color="#10B981" />
           </View>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Plan Courses</Text>
-          <Text style={styles.actionSubtitle}>Manage semesters</Text>
+          <Text style={[styles.actionTitle, { color: theme.text }]}>Semesters</Text>
+          <Text style={styles.actionSubtitle}>Manage courses</Text>
         </TouchableOpacity>
       </View>
-
     </ScrollView>
   );
 }
@@ -165,7 +213,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   cgpaCard: {
-    backgroundColor: '#1E3A8A', // Deep navy royal
+    backgroundColor: '#1E3A8A',
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,

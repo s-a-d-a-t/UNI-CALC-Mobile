@@ -12,15 +12,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import {
-  calculateSemesterGPA,
-  predictRequiredGPA,
-  GRADE_POINTS,
+  calculateSemesterStats,
+  requiredGradeForTarget,
+  GRADE_SCALE,
+  normalizeGrade,
 } from '@/src/lib/gpa';
-import { Course, GradeLetter } from '@/src/types';
-
-const AVAILABLE_GRADES: GradeLetter[] = [
-  'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F',
-];
+import { Course } from '@/src/types';
 
 export default function CalculatorScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -29,9 +26,9 @@ export default function CalculatorScreen() {
 
   // State for Term GPA Calculator
   const [courses, setCourses] = useState<Course[]>([
-    { id: '1', code: 'CS301', title: 'Data Structures', credits: 3, grade: 'A' },
-    { id: '2', code: 'MATH201', title: 'Linear Algebra', credits: 4, grade: 'B+' },
-    { id: '3', code: 'ENG102', title: 'Technical Writing', credits: 3, grade: 'A-' },
+    { id: '1', name: 'Course 1', credits: 4, grade: 'A' },
+    { id: '2', name: 'Course 2', credits: 3, grade: 'B+' },
+    { id: '3', name: 'Course 3', credits: 3, grade: 'A-' },
   ]);
 
   // State for Target CGPA Predictor
@@ -42,24 +39,41 @@ export default function CalculatorScreen() {
 
   // Real-time calculation of Term GPA
   const termSummary = useMemo(() => {
-    return calculateSemesterGPA(courses);
+    return calculateSemesterStats(courses);
   }, [courses]);
 
-  // Real-time prediction calculation
+  // Real-time prediction calculation using requiredGradeForTarget
   const prediction = useMemo(() => {
     const curCGPA = parseFloat(currentCgpaInput) || 0;
     const compCredits = parseFloat(completedCreditsInput) || 0;
     const tgtCGPA = parseFloat(targetCgpaInput) || 0;
     const remCredits = parseFloat(remainingCreditsInput) || 0;
 
-    return predictRequiredGPA(curCGPA, compCredits, tgtCGPA, remCredits);
+    // Synthetic past semesters to feed into requiredGradeForTarget
+    const dummySemesters = [
+      {
+        id: 'dummy',
+        description: 'Past',
+        number: 1,
+        courses: [
+          {
+            id: 'c',
+            name: 'Completed',
+            credits: compCredits,
+            grade: String(curCGPA.toFixed(2)),
+          },
+        ],
+      },
+    ];
+
+    return requiredGradeForTarget(dummySemesters, remCredits, tgtCGPA);
   }, [currentCgpaInput, completedCreditsInput, targetCgpaInput, remainingCreditsInput]);
 
   const addCourseRow = () => {
     const newId = Date.now().toString();
     setCourses((prev) => [
       ...prev,
-      { id: newId, code: `Course ${prev.length + 1}`, title: '', credits: 3, grade: 'A' },
+      { id: newId, name: `Course ${prev.length + 1}`, credits: 3, grade: 'A' },
     ]);
   };
 
@@ -82,7 +96,7 @@ export default function CalculatorScreen() {
       style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#111827' : '#F9FAFB' }]}
       contentContainerStyle={styles.contentContainer}>
       
-      {/* Tab Switcher: Term Calculator vs Predictor */}
+      {/* Mode Switcher */}
       <View style={[styles.modeToggle, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#E5E7EB' }]}>
         <TouchableOpacity
           style={[styles.toggleBtn, activeMode === 'term' && styles.toggleBtnActive]}
@@ -120,7 +134,7 @@ export default function CalculatorScreen() {
             </View>
             <View style={styles.bannerRight}>
               <Text style={styles.bannerSubLabel}>Total Credits</Text>
-              <Text style={styles.bannerSubVal}>{termSummary.totalCredits}</Text>
+              <Text style={styles.bannerSubVal}>{termSummary.credits}</Text>
             </View>
           </View>
 
@@ -143,10 +157,10 @@ export default function CalculatorScreen() {
               <View style={styles.courseHeader}>
                 <TextInput
                   style={[styles.courseInput, { color: theme.text }]}
-                  value={course.code}
+                  value={course.name}
                   placeholder={`Course ${index + 1}`}
                   placeholderTextColor="#9CA3AF"
-                  onChangeText={(val) => updateCourse(course.id, 'code', val)}
+                  onChangeText={(val) => updateCourse(course.id, 'name', val)}
                 />
                 <TouchableOpacity onPress={() => removeCourseRow(course.id)}>
                   <Ionicons name="trash-outline" size={20} color="#EF4444" />
@@ -182,22 +196,22 @@ export default function CalculatorScreen() {
                 <View style={styles.gradeContainer}>
                   <Text style={styles.controlLabel}>Grade:</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {AVAILABLE_GRADES.map((letter) => {
-                      const isSelected = course.grade === letter;
+                    {GRADE_SCALE.map((item) => {
+                      const isSelected = normalizeGrade(course.grade) === item.value;
                       return (
                         <TouchableOpacity
-                          key={letter}
+                          key={item.value}
                           style={[
                             styles.gradeChip,
                             isSelected && styles.gradeChipSelected,
                           ]}
-                          onPress={() => updateCourse(course.id, 'grade', letter)}>
+                          onPress={() => updateCourse(course.id, 'grade', item.value)}>
                           <Text
                             style={[
                               styles.gradeChipText,
                               isSelected && styles.gradeChipTextSelected,
                             ]}>
-                            {letter}
+                            {item.value}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -215,19 +229,19 @@ export default function CalculatorScreen() {
             style={[
               styles.predictionCard,
               {
-                backgroundColor: prediction.isAchievable ? '#1E3A8A' : '#7F1D1D',
+                backgroundColor: prediction.possible ? '#1E3A8A' : '#7F1D1D',
               },
             ]}>
             <Text style={styles.predictLabel}>
-              {prediction.isAchievable ? 'REQUIRED AVERAGE GPA' : 'TARGET NOT REACHABLE'}
+              {prediction.possible ? 'REQUIRED AVERAGE GPA' : 'TARGET NOT ACHIEVABLE'}
             </Text>
             <Text style={styles.predictValue}>
-              {prediction.requiredGPA > 4.0 ? '> 4.0' : prediction.requiredGPA.toFixed(2)}
+              {prediction.requiredGpa > 4.0 ? '> 4.0' : prediction.requiredGpa.toFixed(2)}
             </Text>
             <Text style={styles.predictSubtitle}>
-              {prediction.isAchievable
-                ? `Maintain a ${prediction.requiredGPA.toFixed(2)} average across the remaining ${remainingCreditsInput || 0} credits to reach your ${targetCgpaInput} goal.`
-                : 'Even with straight A+ grades (4.0), the target exceeds the maximum possible score for the remaining credits.'}
+              {prediction.possible
+                ? `You need approximately ${prediction.letter} across your remaining ${remainingCreditsInput || 0} credits to achieve a ${targetCgpaInput} CGPA.`
+                : 'Even with maximum 4.00 grades in all remaining credits, the target cannot be reached.'}
             </Text>
           </View>
 

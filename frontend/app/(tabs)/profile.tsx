@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,23 +10,62 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { API_BASE_URL } from '@/src/api/client';
+import { AcademicAPI } from '@/src/api/academic';
 import { LocalCache, TokenStorage } from '@/src/lib/storage';
+import { AcademicProfile, User } from '@/src/types';
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
-  const [studentName, setStudentName] = useState('Sadat');
-  const [studentId, setStudentId] = useState('ST-2022-8491');
-  const [department, setDepartment] = useState('Computer Science & Engineering');
-  const [targetCgpa, setTargetCgpa] = useState('3.80');
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<AcademicProfile>({
+    name: 'Student',
+    studentId: '',
+    major: '',
+    targetCgpa: 3.5,
+    graduationCredits: 145,
+    coreCreditsRequired: 100,
+    electiveCreditsRequired: 45,
+  });
+
+  const loadProfile = async () => {
+    try {
+      const [currentUser, userProfile] = await Promise.all([
+        AcademicAPI.getSession(),
+        AcademicAPI.getProfile(),
+      ]);
+      if (currentUser) setUser(currentUser);
+      if (userProfile) setProfile(userProfile);
+    } catch (e) {
+      console.warn('Failed to load profile:', e);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [])
+  );
+
+  const handleUpdateTarget = async (newVal: string) => {
+    const num = parseFloat(newVal);
+    if (!isNaN(num)) {
+      setProfile((prev) => ({ ...prev, targetCgpa: num }));
+      try {
+        await AcademicAPI.updateProfile({ targetCgpa: num });
+      } catch (e) {}
+    }
+  };
 
   const handleClearCache = async () => {
     Alert.alert(
       'Clear Offline Cache',
-      'This will remove all cached semesters and calculation data from local device storage.',
+      'This will remove all cached semesters and calculations from local device storage.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -34,8 +73,10 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             await LocalCache.remove('semesters');
+            await LocalCache.remove('profile');
             await LocalCache.remove('assignments');
-            Alert.alert('Success', 'Local cache cleared successfully.');
+            await LocalCache.remove('studyLogs');
+            Alert.alert('Success', 'Local cache cleared.');
           },
         },
       ]
@@ -43,14 +84,15 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    Alert.alert('Sign Out', 'Are you sure you want to log out?', [
+    Alert.alert('Sign Out', 'Sign out of your account on this device?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
-          await TokenStorage.clearTokens();
-          Alert.alert('Logged Out', 'You have been signed out.');
+          await AcademicAPI.logout();
+          setUser(null);
+          Alert.alert('Signed Out', 'You are now in guest/offline mode.');
         },
       },
     ]);
@@ -70,9 +112,28 @@ export default function ProfileScreen() {
         <View style={styles.avatar}>
           <Ionicons name="person" size={36} color="#2563EB" />
         </View>
-        <Text style={[styles.name, { color: theme.text }]}>{studentName}</Text>
-        <Text style={styles.studentId}>{studentId}</Text>
-        <Text style={styles.dept}>{department}</Text>
+        <Text style={[styles.name, { color: theme.text }]}>
+          {profile.name || user?.name || 'Guest Student'}
+        </Text>
+        <Text style={styles.studentId}>
+          {profile.studentId || 'No Student ID Set'}
+        </Text>
+        <Text style={styles.dept}>
+          {profile.major || 'No Major Selected'}
+        </Text>
+
+        {user ? (
+          <View style={styles.syncedBadge}>
+            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+            <Text style={styles.syncedText}>{user.email}</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.signInBtn}
+            onPress={() => router.push('/modal')}>
+            <Text style={styles.signInBtnText}>Log In to Sync With Web</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Target Setting */}
@@ -85,19 +146,19 @@ export default function ProfileScreen() {
         <View style={styles.settingRow}>
           <View style={styles.settingInfo}>
             <Text style={[styles.settingLabel, { color: theme.text }]}>Target CGPA</Text>
-            <Text style={styles.settingDesc}>Used across dashboard and predictors</Text>
+            <Text style={styles.settingDesc}>Syncs across desktop and mobile app</Text>
           </View>
           <TextInput
             style={[styles.targetInput, { color: theme.text }]}
-            value={targetCgpa}
+            value={String(profile.targetCgpa || '3.50')}
             keyboardType="decimal-pad"
-            onChangeText={setTargetCgpa}
+            onChangeText={handleUpdateTarget}
           />
         </View>
       </View>
 
       {/* Network & Backend Configuration */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Backend Connection</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Backend Server</Text>
       <View
         style={[
           styles.card,
@@ -107,14 +168,13 @@ export default function ProfileScreen() {
           <Text style={[styles.settingLabel, { color: theme.text }]}>Active API Endpoint</Text>
           <Text style={styles.apiEndpointText}>{API_BASE_URL}</Text>
           <Text style={styles.networkHint}>
-            Android Emulator: 10.0.2.2:5000{'\n'}
-            Physical Device: Your computer's Wi-Fi IP (e.g. 192.168.x.x:5000)
+            Both Desktop Web and Mobile APK connect to this API and share the same PostgreSQL database.
           </Text>
         </View>
       </View>
 
       {/* Storage & Account Actions */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Actions</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Device Actions</Text>
       <View
         style={[
           styles.card,
@@ -128,15 +188,18 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
         </TouchableOpacity>
 
-        <View style={styles.divider} />
-
-        <TouchableOpacity style={styles.actionRow} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-          <Text style={[styles.actionRowText, { color: '#EF4444' }]}>
-            Sign Out
-          </Text>
-          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-        </TouchableOpacity>
+        {user && (
+          <>
+            <View style={styles.divider} />
+            <TouchableOpacity style={styles.actionRow} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+              <Text style={[styles.actionRowText, { color: '#EF4444' }]}>
+                Sign Out
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </ScrollView>
   );
@@ -181,6 +244,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#2563EB',
     marginTop: 4,
+  },
+  syncedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  syncedText: {
+    color: '#065F46',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  signInBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  signInBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 16,
