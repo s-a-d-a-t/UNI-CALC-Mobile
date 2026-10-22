@@ -1,22 +1,68 @@
+// modified for ==neon== connection 
+
+const dns = require('dns');
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
 const path = require('path');
+const fs = require('fs');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+// Check backend/.env first, then root .env
+if (fs.existsSync(path.join(__dirname, '.env'))) {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+} else {
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+}
 
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false, // Required for Neon cloud PostgreSQL
-      },
-    })
-  : new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      port: Number(process.env.DB_PORT) || 5432,
-      database: process.env.DB_NAME || 'unicalc',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres',
-    });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
+
+module.exports = {
+  pool,
+};
+
+async function ensureFeatureSchema() {
+  // Keep runtime resilient for existing databases that predate new features.
+  await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS core_credits_required INTEGER DEFAULT 100`);
+  await pool.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS elective_credits_required INTEGER DEFAULT 45`);
+
+  await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'core'`);
+  await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'passed'`);
+  await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS is_retake BOOLEAN DEFAULT false`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS assignments (
+      id          SERIAL PRIMARY KEY,
+      email       TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
+      client_id   TEXT NOT NULL,
+      title       TEXT NOT NULL DEFAULT '',
+      course_name TEXT DEFAULT '',
+      type        TEXT DEFAULT 'assignment',
+      due_date    TIMESTAMPTZ,
+      completed   BOOLEAN DEFAULT false,
+      notes       TEXT DEFAULT ''
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS study_logs (
+      id          SERIAL PRIMARY KEY,
+      email       TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
+      client_id   TEXT NOT NULL,
+      course_name TEXT NOT NULL DEFAULT '',
+      hours       NUMERIC(4,1) DEFAULT 0,
+      log_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+      notes       TEXT DEFAULT ''
+    )
+  `);
+}
 
 const DEFAULT_SEMESTERS = [
   {
@@ -24,9 +70,9 @@ const DEFAULT_SEMESTERS = [
     description: 'Year 1, Semester I',
     number: 1,
     courses: [
-      { id: 'course-1', name: 'Introduction to Calculus', credits: 4, grade: '4.00', category: 'core', status: 'passed' },
-      { id: 'course-2', name: 'General Physics', credits: 3, grade: '3.50', category: 'core', status: 'passed' },
-      { id: 'course-3', name: 'Communicative English Skills', credits: 3, grade: '3.00', category: 'general', status: 'passed' },
+      { id: 'course-1', name: 'Introduction to Calculus', credits: 4, grade: '4.00' },
+      { id: 'course-2', name: 'General Physics', credits: 3, grade: '3.50' },
+      { id: 'course-3', name: 'Communicative English Skills', credits: 3, grade: '3.00' },
     ],
   },
 ];
@@ -83,9 +129,34 @@ async function getProfileRow(email) {
 async function loginUser(email, password) {
   const formattedEmail = email.toLowerCase().trim();
   const user = await findUserByEmail(formattedEmail);
-  if (!user || user.password !== password) {
+  if (!user) {
     throw new Error('Invalid email or password');
   }
+
+  // Detect if stored password is a bcrypt hash
+  const isBcrypt = user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$');
+  let passwordMatch = false;
+
+  if (isBcrypt) {
+    passwordMatch = await bcrypt.compare(password, user.password);
+  } else {
+    // Fallback for existing plaintext passwords
+    passwordMatch = user.password === password;
+    if (passwordMatch) {
+      // Proactively upgrade the plaintext password to a secure hash
+      try {
+        const hashedUpgrade = await bcrypt.hash(password, 10);
+        await pool.query('UPDATE users SET password = $1 WHERE email = $2', [hashedUpgrade, formattedEmail]);
+      } catch (err) {
+        console.error('Failed to upgrade user password hash:', err);
+      }
+    }
+  }
+
+  if (!passwordMatch) {
+    throw new Error('Invalid email or password');
+  }
+
   const profile = mapProfile(await getProfileRow(formattedEmail));
   return { email: formattedEmail, ...profile };
 }
@@ -96,13 +167,14 @@ async function registerUser({ name, email, password, major, studentId }) {
     throw new Error('Email is already registered');
   }
 
+  const hashedPassword = await bcrypt.hash(password, 10);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO users (email, password, name, major, student_id)
        VALUES ($1, $2, $3, $4, $5)`,
-      [formattedEmail, password, name, major || null, studentId || null]
+      [formattedEmail, hashedPassword, name, major || null, studentId || null]
     );
     await client.query(
       `INSERT INTO profiles (email, name, student_id, major, target_cgpa, graduation_credits)
@@ -152,30 +224,44 @@ async function getProfile(email) {
 }
 
 async function updateProfile(email, profileData) {
-  const { rows } = await pool.query(
-    `INSERT INTO profiles (email, name, student_id, major, target_cgpa, graduation_credits, core_credits_required, elective_credits_required)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (email) DO UPDATE SET
-       name = EXCLUDED.name,
-       student_id = EXCLUDED.student_id,
-       major = EXCLUDED.major,
-       target_cgpa = EXCLUDED.target_cgpa,
-       graduation_credits = EXCLUDED.graduation_credits,
-       core_credits_required = EXCLUDED.core_credits_required,
-       elective_credits_required = EXCLUDED.elective_credits_required
-     RETURNING *`,
+  const updated = {
+    name: profileData.name || '',
+    studentId: profileData.studentId || '',
+    major: profileData.major || '',
+    targetCgpa: parseFloat(profileData.targetCgpa) || 2.0,
+    graduationCredits: parseInt(profileData.graduationCredits, 10) || 120,
+    coreCreditsRequired: parseInt(profileData.coreCreditsRequired, 10) || 100,
+    electiveCreditsRequired: parseInt(profileData.electiveCreditsRequired, 10) || 45,
+  };
+
+  await pool.query(
+    `UPDATE profiles SET
+       name = $2,
+       student_id = $3,
+       major = $4,
+       target_cgpa = $5,
+       graduation_credits = $6,
+       core_credits_required = $7,
+       elective_credits_required = $8
+     WHERE email = $1`,
     [
       email,
-      profileData.name || '',
-      profileData.studentId || '',
-      profileData.major || '',
-      profileData.targetCgpa != null ? Number(profileData.targetCgpa) : 3.5,
-      profileData.graduationCredits != null ? Number(profileData.graduationCredits) : 145,
-      profileData.coreCreditsRequired != null ? Number(profileData.coreCreditsRequired) : 100,
-      profileData.electiveCreditsRequired != null ? Number(profileData.electiveCreditsRequired) : 45,
+      updated.name,
+      updated.studentId,
+      updated.major,
+      updated.targetCgpa,
+      updated.graduationCredits,
+      updated.coreCreditsRequired,
+      updated.electiveCreditsRequired,
     ]
   );
-  return mapProfile(rows[0]);
+
+  await pool.query(
+    `UPDATE users SET name = $2, major = $3, student_id = $4 WHERE email = $1`,
+    [email, updated.name, updated.major, updated.studentId]
+  );
+
+  return updated;
 }
 
 async function getSemesters(email) {
@@ -341,6 +427,7 @@ async function saveStudyLogs(email, studyLogs) {
 
 module.exports = {
   pool,
+  ensureFeatureSchema,
   loginUser,
   registerUser,
   getProfile,

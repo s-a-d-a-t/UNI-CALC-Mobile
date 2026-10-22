@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 const ACCESS_TOKEN_KEY = 'unicalc_access_token';
 const REFRESH_TOKEN_KEY = 'unicalc_refresh_token';
+const SESSION_COOKIE_KEY = 'unicalc_session_cookie';
 
 const isWeb = Platform.OS === 'web';
 
@@ -69,13 +70,43 @@ export const TokenStorage = {
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(ACCESS_TOKEN_KEY);
           window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+          window.localStorage.removeItem(SESSION_COOKIE_KEY);
         }
         return;
       }
       await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      await SecureStore.deleteItemAsync(SESSION_COOKIE_KEY);
     } catch (error) {
       console.error('Failed to clear tokens:', error);
+    }
+  },
+
+  async saveSessionCookie(cookie: string): Promise<void> {
+    try {
+      if (isWeb) {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(SESSION_COOKIE_KEY, cookie);
+        }
+        return;
+      }
+      await SecureStore.setItemAsync(SESSION_COOKIE_KEY, cookie);
+    } catch (error) {
+      console.error('Failed to save session cookie:', error);
+    }
+  },
+
+  async getSessionCookie(): Promise<string | null> {
+    try {
+      if (isWeb) {
+        if (typeof window !== 'undefined') {
+          return window.localStorage.getItem(SESSION_COOKIE_KEY);
+        }
+        return null;
+      }
+      return await SecureStore.getItemAsync(SESSION_COOKIE_KEY);
+    } catch (error) {
+      return null;
     }
   },
 };

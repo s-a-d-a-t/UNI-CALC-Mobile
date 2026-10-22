@@ -1,22 +1,63 @@
+const dns = require('dns');
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
+const {
+  validateRequestBody,
+  loginSchema,
+  registerSchema,
+  profileSchema,
+  semestersSchema,
+  assignmentsSchema,
+  studyLogsSchema,
+} = require('./validation');
 
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+// Read backend/.env or root .env
+if (fs.existsSync(path.join(__dirname, '.env'))) {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+} else {
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+}
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const JWT_SECRET = process.env.JWT_SECRET || 'unicalc-jwt-secret-key-2026';
 
-// Allow desktop web origin with credentials, and permit mobile app requests
+// Rate limiting middleware for auth routes
+const authRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // generous limit for development & mobile testing
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    const retryAfter = req.rateLimit.resetTime ? Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000) : 60;
+    res.status(429).json({
+      error: `Too many attempts. Please try again in ${retryAfter} seconds.`,
+      retryAfter,
+    });
+  },
+});
+
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
+// Support cross-origin requests from web desktop, mobile apps, and local dev
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or Postman)
+      // Allow mobile apps (no origin), localhost, and client origin
       if (!origin || origin === CLIENT_ORIGIN || origin.includes('localhost')) {
         return callback(null, true);
       }
@@ -28,7 +69,6 @@ app.use(
 
 app.use(express.json());
 
-// Session support for Desktop Web Browsers
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'unicalc-dev-session-secret',
@@ -36,19 +76,16 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // Set to true in production HTTPS
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
 
-/**
- * Dual Authentication Middleware:
- * 1. Checks for Authorization: Bearer <JWT> (used by Mobile App)
- * 2. Checks for req.session.email (used by Desktop Web Browser)
- */
+// Dual authentication middleware: checks JWT Bearer token (Mobile) or Session cookie (Web Desktop)
 function requireAuth(req, res, next) {
-  // Check Bearer Token (Mobile)
+  // 1. Check Bearer Token (Mobile)
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
@@ -61,7 +98,7 @@ function requireAuth(req, res, next) {
     }
   }
 
-  // Check Session Cookie (Desktop Web)
+  // 2. Check Session Cookie (Web Desktop)
   if (req.session && req.session.email) {
     req.userEmail = req.session.email;
     return next();
@@ -70,7 +107,6 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ error: 'Not authenticated' });
 }
 
-// Generate JWT token helper
 function generateToken(email) {
   return jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
 }
@@ -85,7 +121,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-// Check Session / Current User
+// Current User Session
 app.get('/api/auth/session', async (req, res) => {
   try {
     let email = null;
@@ -115,10 +151,11 @@ app.get('/api/auth/session', async (req, res) => {
   }
 });
 
-// Login (Supports both Desktop Cookie + Mobile JWT)
-app.post('/api/auth/login', async (req, res) => {
+// Login (Supports Bcrypt & sets both Session Cookie for Web and JWT for Mobile)
+app.post('/api/auth/login', authRateLimiter, validateRequestBody(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`[AUTH] Login attempt for: ${email}`);
     const user = await db.loginUser(email, password);
 
     // 1. Set session cookie for Desktop Web
@@ -127,25 +164,25 @@ app.post('/api/auth/login', async (req, res) => {
     // 2. Generate JWT for Mobile
     const token = generateToken(user.email);
 
+    console.log(`[AUTH] Login successful for: ${email}`);
     res.json({ user, token });
   } catch (err) {
+    console.error(`[AUTH] Login failed for ${req.body?.email}:`, err.message);
     res.status(401).json({ error: err.message });
   }
 });
 
-// Register (Supports both Desktop Cookie + Mobile JWT)
-app.post('/api/auth/register', async (req, res) => {
+// Register (Uses Bcrypt & sets both Session Cookie for Web and JWT for Mobile)
+app.post('/api/auth/register', authRateLimiter, validateRequestBody(registerSchema), async (req, res) => {
   try {
     const user = await db.registerUser(req.body);
 
-    // 1. Set session cookie for Desktop Web
     req.session.email = user.email;
-
-    // 2. Generate JWT for Mobile
     const token = generateToken(user.email);
 
     res.json({ user, token });
   } catch (err) {
+    console.error(`[AUTH] Register failed:`, err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -158,7 +195,7 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
-// Academic Profile
+// Profile Endpoints
 app.get('/api/profile', requireAuth, async (req, res) => {
   try {
     const profile = await db.getProfile(req.userEmail);
@@ -168,7 +205,7 @@ app.get('/api/profile', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/profile', requireAuth, async (req, res) => {
+app.put('/api/profile', requireAuth, validateRequestBody(profileSchema), async (req, res) => {
   try {
     const profile = await db.updateProfile(req.userEmail, req.body);
     res.json({ profile });
@@ -177,7 +214,7 @@ app.put('/api/profile', requireAuth, async (req, res) => {
   }
 });
 
-// Semesters & Courses
+// Semesters & Courses Endpoints
 app.get('/api/semesters', requireAuth, async (req, res) => {
   try {
     const semesters = await db.getSemesters(req.userEmail);
@@ -187,7 +224,7 @@ app.get('/api/semesters', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/semesters', requireAuth, async (req, res) => {
+app.put('/api/semesters', requireAuth, validateRequestBody(semestersSchema), async (req, res) => {
   try {
     const semesters = await db.saveSemesters(req.userEmail, req.body.semesters);
     res.json({ semesters });
@@ -196,7 +233,7 @@ app.put('/api/semesters', requireAuth, async (req, res) => {
   }
 });
 
-// Assignments
+// Assignments Endpoints
 app.get('/api/assignments', requireAuth, async (req, res) => {
   try {
     const assignments = await db.getAssignments(req.userEmail);
@@ -206,7 +243,7 @@ app.get('/api/assignments', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/assignments', requireAuth, async (req, res) => {
+app.put('/api/assignments', requireAuth, validateRequestBody(assignmentsSchema), async (req, res) => {
   try {
     const assignments = await db.saveAssignments(req.userEmail, req.body.assignments);
     res.json({ assignments });
@@ -215,7 +252,7 @@ app.put('/api/assignments', requireAuth, async (req, res) => {
   }
 });
 
-// Study Logs
+// Study Logs Endpoints
 app.get('/api/study-logs', requireAuth, async (req, res) => {
   try {
     const studyLogs = await db.getStudyLogs(req.userEmail);
@@ -225,7 +262,7 @@ app.get('/api/study-logs', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/study-logs', requireAuth, async (req, res) => {
+app.put('/api/study-logs', requireAuth, validateRequestBody(studyLogsSchema), async (req, res) => {
   try {
     const studyLogs = await db.saveStudyLogs(req.userEmail, req.body.studyLogs);
     res.json({ studyLogs });
@@ -234,6 +271,16 @@ app.put('/api/study-logs', requireAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`UNI-CALC Dual API listening on http://0.0.0.0:${PORT}`);
-});
+async function startServer() {
+  try {
+    await db.ensureFeatureSchema();
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`UNI-CALC Backend active and listening on http://0.0.0.0:${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to initialize database schema:', err.message);
+    process.exit(1);
+  }
+}
+
+startServer();
