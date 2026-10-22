@@ -3,22 +3,33 @@ import { Platform } from 'react-native';
 import { TokenStorage } from '../lib/storage';
 
 /**
- * Android Emulator loops back to host machine via 10.0.2.2.
- * iOS Simulator and Web use localhost.
- * Physical devices should point to host computer's LAN IP (e.g. 192.168.x.x).
+ * Normalizes the API URL:
+ * - Appends '/api' if missing from EXPO_PUBLIC_API_URL
+ * - Automatically falls back to local port 3001 for emulator / local testing
  */
-const getDefaultBaseURL = (): string => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3001/api';
+const getNormalizedBaseURL = (): string => {
+  let url = process.env.EXPO_PUBLIC_API_URL;
+  if (!url) {
+    if (Platform.OS === 'android') {
+      url = 'http://10.0.2.2:3001/api';
+    } else {
+      url = 'http://localhost:3001/api';
+    }
   }
-  return 'http://localhost:3001/api';
+
+  // Ensure /api is appended if user provided base origin
+  const cleanUrl = url.trim().replace(/\/+$/, '');
+  if (!cleanUrl.endsWith('/api')) {
+    return `${cleanUrl}/api`;
+  }
+  return cleanUrl;
 };
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getDefaultBaseURL();
+export const API_BASE_URL = getNormalizedBaseURL();
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
