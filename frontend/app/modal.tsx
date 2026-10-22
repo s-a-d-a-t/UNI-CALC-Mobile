@@ -60,7 +60,11 @@ export default function AuthModalScreen() {
         });
         Alert.alert('Welcome', 'Account registered successfully!');
       }
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (err: any) {
       const msg = err.response?.data?.error || err.message || 'Authentication failed.';
       setError(msg);
@@ -186,7 +190,9 @@ export default function AuthModalScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
           <Text style={styles.closeBtnText}>Continue as Guest / Offline</Text>
         </TouchableOpacity>
       </ScrollView>
