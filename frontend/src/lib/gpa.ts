@@ -290,6 +290,15 @@ export function predictCgpa(completedSemesters: Semester[], hypotheticalCourses:
   };
 }
 
+export function predictBestWorstCase(completedSemesters: Semester[], inProgressCourses: Course[]) {
+  const best = inProgressCourses.map((c) => ({ ...c, grade: 'A+' }));
+  const worst = inProgressCourses.map((c) => ({ ...c, grade: 'F' }));
+  return {
+    best: predictCgpa(completedSemesters, best).predictedCgpa,
+    worst: predictCgpa(completedSemesters, worst).predictedCgpa,
+  };
+}
+
 export function requiredGradeForTarget(
   completedSemesters: Semester[],
   remainingCredits: number,
@@ -349,6 +358,17 @@ export function analyzeRetakes(semesters: Semester[], retakeTargetGrade = 'B+') 
   });
 
   return retakeCandidates.sort((a, b) => b.cgpaLift - a.cgpaLift);
+}
+
+export function simulateRetake(semesters: Semester[], courseId: string, newGradeValue: string) {
+  const updated = (semesters || []).map((sem) => ({
+    ...sem,
+    courses: (sem.courses || []).map((course) => {
+      if (course.id !== courseId) return course;
+      return { ...course, grade: newGradeValue, status: 'passed' as const, isRetake: true };
+    }),
+  }));
+  return calculateGlobalStats(updated).cgpa;
 }
 
 export function getGraduationStats(semesters: Semester[], profile?: AcademicProfile | null) {
