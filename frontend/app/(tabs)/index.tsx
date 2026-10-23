@@ -15,6 +15,7 @@ import { AcademicAPI } from '@/src/api/academic';
 import {
   calculateGlobalStats,
   calculateSemesterStats,
+  getSemesterChartData,
   getGraduationStats,
   getGradeDistributionData,
   getPassFailStats,
@@ -23,6 +24,12 @@ import {
   formatGpa,
   GRADE_COLORS,
 } from '@/src/lib/gpa';
+import {
+  GpaTrendChart,
+  GradeDistributionBarChart,
+  CreditLoadGpaChart,
+  PassFailRatioChart,
+} from '@/src/components/charts';
 import { AcademicProfile, Semester, User } from '@/src/types';
 
 export default function DashboardScreen() {
@@ -76,6 +83,7 @@ export default function DashboardScreen() {
   const gradeDist = getGradeDistributionData(semesters);
   const passFail = getPassFailStats(semesters);
   const strongestWeakest = getStrongestWeakestSemesters(semesters);
+  const semesterChartData = getSemesterChartData(semesters);
 
   const recentSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null;
   const recentSemesterStats = recentSemester ? calculateSemesterStats(recentSemester.courses) : null;
@@ -259,55 +267,39 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          {/* Grade Distribution Section */}
+          {/* 1. Academic Performance Curve (GPA & CGPA Trend Chart) */}
           <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.cardHeaderRow}>
               <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
-                <Ionicons name="pie-chart-outline" size={18} color={theme.tint} />
+                <Ionicons name="trending-up" size={18} color={theme.tint} />
               </View>
               <View>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Grade Distribution</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Academic Performance Curve</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                  Semester GPA vs. Cumulative CGPA trajectory
+                </Text>
+              </View>
+            </View>
+            <GpaTrendChart data={semesterChartData} />
+          </View>
+
+          {/* 2. Grade Distribution Bar Chart */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                <Ionicons name="bar-chart-outline" size={18} color={theme.tint} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Grade Distribution Breakdown</Text>
                 <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
                   Letter grade frequency and earned credits
                 </Text>
               </View>
             </View>
-
-            {gradeDist.length > 0 ? (
-              <View style={styles.gradeGrid}>
-                {gradeDist.map((item) => (
-                  <View
-                    key={item.name}
-                    style={[styles.gradeItem, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-                    <View style={styles.gradeItemHeader}>
-                      <View
-                        style={[
-                          styles.gradeColorDot,
-                          { backgroundColor: GRADE_COLORS[item.name] || theme.tint },
-                        ]}
-                      />
-                      <Text style={[styles.gradeLetter, { color: theme.text }]}>{item.name}</Text>
-                      <Text style={[styles.gradePts, { color: theme.textMuted }]}>
-                        ({item.points.toFixed(2)})
-                      </Text>
-                    </View>
-                    <Text style={[styles.gradeCount, { color: theme.text }]}>
-                      {item.courses} {item.courses === 1 ? 'course' : 'courses'}
-                    </Text>
-                    <Text style={[styles.gradeCredits, { color: theme.textMuted }]}>
-                      {item.credits} hrs ({item.creditPct}%)
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={[styles.emptyNotice, { color: theme.textMuted }]}>
-                No course grades entered yet. Add courses in the Calculator tab to view distribution curves.
-              </Text>
-            )}
+            <GradeDistributionBarChart data={gradeDist} />
           </View>
 
-          {/* Pass vs. Fail Breakdown */}
+          {/* 3. Course Pass vs. Fail Completion Ratio */}
           <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.cardHeaderRow}>
               <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
@@ -320,28 +312,13 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
-
-            <View style={styles.passFailRow}>
-              <View style={[styles.passFailCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-                <Text style={[styles.passFailLabel, { color: theme.textMuted }]}>PASSED</Text>
-                <Text style={[styles.passFailValue, { color: '#10B981' }]}>
-                  {passFail.passedCourses} Courses
-                </Text>
-                <Text style={[styles.passFailSub, { color: theme.textMuted }]}>
-                  {passFail.passedCredits} Credits ({passFail.passRateCourses}%)
-                </Text>
-              </View>
-
-              <View style={[styles.passFailCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-                <Text style={[styles.passFailLabel, { color: theme.textMuted }]}>FAILED / RETAKE</Text>
-                <Text style={[styles.passFailValue, { color: '#EF4444' }]}>
-                  {passFail.failedCourses} Courses
-                </Text>
-                <Text style={[styles.passFailSub, { color: theme.textMuted }]}>
-                  {passFail.failedCredits} Credits
-                </Text>
-              </View>
-            </View>
+            <PassFailRatioChart
+              passedCourses={passFail.passedCourses}
+              failedCourses={passFail.failedCourses}
+              passedCredits={passFail.passedCredits}
+              failedCredits={passFail.failedCredits}
+              passRateCourses={passFail.passRateCourses}
+            />
           </View>
         </View>
       )}
@@ -390,6 +367,22 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+
+          {/* Credit Load vs. GPA Analysis Chart */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                <Ionicons name="layers-outline" size={18} color={theme.tint} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Credit Load vs. GPA Analysis</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                  Examine if heavier credit terms impacted semester GPA
+                </Text>
+              </View>
+            </View>
+            <CreditLoadGpaChart data={semesterChartData} />
           </View>
 
           {/* Quick Metrics */}
