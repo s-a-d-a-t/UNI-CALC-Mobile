@@ -1,286 +1,425 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   useColorScheme,
   Alert,
+  TextInput,
+  RefreshControl,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import Colors from '@/constants/Colors';
+import { Semester, Course, CourseCategory, CourseStatus } from '@/src/types';
 import {
   calculateSemesterStats,
-  requiredGradeForTarget,
+  calculateGlobalStats,
   GRADE_SCALE,
+  GRADE_COLORS,
+  formatGpa,
   normalizeGrade,
+  COURSE_CATEGORIES,
+  COURSE_STATUSES,
 } from '@/src/lib/gpa';
-import { Course } from '@/src/types';
+import { AcademicAPI } from '@/src/api/academic';
 
 export default function CalculatorScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
-  const [activeMode, setActiveMode] = useState<'term' | 'predict'>('term');
+  const isDark = colorScheme === 'dark';
 
-  // State for Term GPA Calculator
-  const [courses, setCourses] = useState<Course[]>([
-    { id: '1', name: 'Course 1', credits: 4, grade: 'A' },
-    { id: '2', name: 'Course 2', credits: 3, grade: 'B+' },
-    { id: '3', name: 'Course 3', credits: 3, grade: 'A-' },
-  ]);
+  const [semesters, setSemesters] = useState<Semester[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // State for Target CGPA Predictor
-  const [currentCgpaInput, setCurrentCgpaInput] = useState('3.40');
-  const [completedCreditsInput, setCompletedCreditsInput] = useState('60');
-  const [targetCgpaInput, setTargetCgpaInput] = useState('3.70');
-  const [remainingCreditsInput, setRemainingCreditsInput] = useState('30');
+  // Grade Picker Modal state
+  const [gradeModalVisible, setGradeModalVisible] = useState(false);
+  const [selectedSemesterId, setSelectedSemesterId] = useState<string | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
 
-  // Real-time calculation of Term GPA
-  const termSummary = useMemo(() => {
-    return calculateSemesterStats(courses);
-  }, [courses]);
+  const loadSemesters = async () => {
+    try {
+      const data = await AcademicAPI.getSemesters();
+      if (data && data.length > 0) {
+        setSemesters(data);
+      }
+    } catch (e) {
+      console.warn('Failed to load semesters:', e);
+    }
+  };
 
-  // Real-time prediction calculation using requiredGradeForTarget
-  const prediction = useMemo(() => {
-    const curCGPA = parseFloat(currentCgpaInput) || 0;
-    const compCredits = parseFloat(completedCreditsInput) || 0;
-    const tgtCGPA = parseFloat(targetCgpaInput) || 0;
-    const remCredits = parseFloat(remainingCreditsInput) || 0;
+  useFocusEffect(
+    useCallback(() => {
+      loadSemesters();
+    }, [])
+  );
 
-    // Synthetic past semesters to feed into requiredGradeForTarget
-    const dummySemesters = [
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadSemesters();
+    setRefreshing(false);
+  };
+
+  const syncSemesters = async (updated: Semester[]) => {
+    setSemesters(updated);
+    try {
+      await AcademicAPI.saveSemesters(updated);
+    } catch (e) {
+      console.warn('Saved to local storage, will sync when online');
+    }
+  };
+
+  const updateCourse = (
+    semesterId: string,
+    courseId: string,
+    field: keyof Course,
+    value: any
+  ) => {
+    const updated = semesters.map((sem) => {
+      if (sem.id !== semesterId) return sem;
+      return {
+        ...sem,
+        courses: sem.courses.map((course) => {
+          if (course.id !== courseId) return course;
+          return {
+            ...course,
+            [field]: field === 'credits' ? (value === '' ? '' : parseInt(value, 10) || 0) : value,
+          };
+        }),
+      };
+    });
+    syncSemesters(updated);
+  };
+
+  const addCourseRow = (semesterId: string) => {
+    const updated = semesters.map((sem) => {
+      if (sem.id !== semesterId) return sem;
+      const newCourse: Course = {
+        id: `course-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        name: '',
+        credits: 3,
+        grade: 'A',
+        category: 'core',
+        status: 'passed',
+        isRetake: false,
+      };
+      return { ...sem, courses: [...sem.courses, newCourse] };
+    });
+    syncSemesters(updated);
+  };
+
+  const deleteCourseRow = (semesterId: string, courseId: string) => {
+    const sem = semesters.find((s) => s.id === semesterId);
+    if (!sem || sem.courses.length <= 1) {
+      Alert.alert('Cannot Remove', 'Each semester must have at least one course row.');
+      return;
+    }
+    const updated = semesters.map((s) => {
+      if (s.id !== semesterId) return s;
+      return {
+        ...s,
+        courses: s.courses.filter((c) => c.id !== courseId),
+      };
+    });
+    syncSemesters(updated);
+  };
+
+  const addSemester = () => {
+    const nextNumber = semesters.length + 1;
+    const ts = Date.now();
+    const newSem: Semester = {
+      id: `sem-${ts}`,
+      description: `Year ${Math.ceil(nextNumber / 2)}, Semester ${nextNumber % 2 === 1 ? 'I' : 'II'}`,
+      number: nextNumber,
+      courses: [
+        { id: `course-${ts}-1`, name: '', credits: 4, grade: 'A', category: 'core', status: 'passed' },
+        { id: `course-${ts}-2`, name: '', credits: 3, grade: 'A', category: 'core', status: 'passed' },
+        { id: `course-${ts}-3`, name: '', credits: 3, grade: 'A', category: 'core', status: 'passed' },
+      ],
+    };
+    syncSemesters([...semesters, newSem]);
+  };
+
+  const deleteSemester = (semesterId: string) => {
+    if (semesters.length <= 1) {
+      Alert.alert('Cannot Delete', 'At least one semester is required in your academic log.');
+      return;
+    }
+    Alert.alert('Delete Semester', 'Are you sure you want to delete this entire semester and its courses?', [
+      { text: 'Cancel', style: 'cancel' },
       {
-        id: 'dummy',
-        description: 'Past',
-        number: 1,
-        courses: [
-          {
-            id: 'c',
-            name: 'Completed',
-            credits: compCredits,
-            grade: String(curCGPA.toFixed(2)),
-          },
-        ],
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          syncSemesters(semesters.filter((s) => s.id !== semesterId));
+        },
       },
-    ];
-
-    return requiredGradeForTarget(dummySemesters, remCredits, tgtCGPA);
-  }, [currentCgpaInput, completedCreditsInput, targetCgpaInput, remainingCreditsInput]);
-
-  const addCourseRow = () => {
-    const newId = Date.now().toString();
-    setCourses((prev) => [
-      ...prev,
-      { id: newId, name: `Course ${prev.length + 1}`, credits: 3, grade: 'A' },
     ]);
   };
 
-  const removeCourseRow = (id: string) => {
-    if (courses.length <= 1) {
-      Alert.alert('Notice', 'You need at least one course in the calculation.');
-      return;
-    }
-    setCourses((prev) => prev.filter((c) => c.id !== id));
+  const openGradePicker = (semesterId: string, courseId: string) => {
+    setSelectedSemesterId(semesterId);
+    setSelectedCourseId(courseId);
+    setGradeModalVisible(true);
   };
 
-  const updateCourse = (id: string, field: keyof Course, value: any) => {
-    setCourses((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, [field]: value } : c))
-    );
+  const handleSelectGrade = (gradeLetter: string) => {
+    if (selectedSemesterId && selectedCourseId) {
+      updateCourse(selectedSemesterId, selectedCourseId, 'grade', gradeLetter);
+    }
+    setGradeModalVisible(false);
   };
+
+  const globalStats = calculateGlobalStats(semesters);
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#111827' : '#F9FAFB' }]}
-      contentContainerStyle={styles.contentContainer}>
-      
-      {/* Mode Switcher */}
-      <View style={[styles.modeToggle, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#E5E7EB' }]}>
-        <TouchableOpacity
-          style={[styles.toggleBtn, activeMode === 'term' && styles.toggleBtnActive]}
-          onPress={() => setActiveMode('term')}>
-          <Text
-            style={[
-              styles.toggleBtnText,
-              activeMode === 'term' ? styles.toggleTextActive : { color: theme.text },
-            ]}>
-            Term GPA
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Top CGPA Live Bar */}
+      <View style={[styles.liveBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <View style={styles.liveBarItem}>
+          <Text style={[styles.liveBarLabel, { color: theme.textMuted }]}>CUMULATIVE CGPA</Text>
+          <Text style={[styles.liveBarValue, { color: theme.tint }]}>
+            {formatGpa(globalStats.cgpa)}
           </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.toggleBtn, activeMode === 'predict' && styles.toggleBtnActive]}
-          onPress={() => setActiveMode('predict')}>
-          <Text
-            style={[
-              styles.toggleBtnText,
-              activeMode === 'predict' ? styles.toggleTextActive : { color: theme.text },
-            ]}>
-            Target Predictor
+        </View>
+        <View style={[styles.liveBarDivider, { backgroundColor: theme.border }]} />
+        <View style={styles.liveBarItem}>
+          <Text style={[styles.liveBarLabel, { color: theme.textMuted }]}>TOTAL CREDITS</Text>
+          <Text style={[styles.liveBarValue, { color: theme.text }]}>
+            {globalStats.totalCredits} hrs
           </Text>
-        </TouchableOpacity>
+        </View>
+        <View style={[styles.liveBarDivider, { backgroundColor: theme.border }]} />
+        <View style={styles.liveBarItem}>
+          <Text style={[styles.liveBarLabel, { color: theme.textMuted }]}>TOTAL TERMS</Text>
+          <Text style={[styles.liveBarValue, { color: theme.text }]}>
+            {semesters.length}
+          </Text>
+        </View>
       </View>
 
-      {/* MODE 1: Term GPA Calculator */}
-      {activeMode === 'term' ? (
-        <View>
-          {/* Result Banner */}
-          <View style={styles.resultBanner}>
-            <View>
-              <Text style={styles.bannerLabel}>CALCULATED TERM GPA</Text>
-              <Text style={styles.bannerValue}>{termSummary.gpa.toFixed(2)}</Text>
-            </View>
-            <View style={styles.bannerRight}>
-              <Text style={styles.bannerSubLabel}>Total Credits</Text>
-              <Text style={styles.bannerSubVal}>{termSummary.credits}</Text>
-            </View>
-          </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.tint} />}>
+        
+        {/* Semester Cards */}
+        {semesters.map((sem, sIndex) => {
+          const stats = calculateSemesterStats(sem.courses);
+          return (
+            <View key={sem.id} style={[styles.semCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              {/* Semester Header */}
+              <View style={[styles.semHeader, { borderBottomColor: theme.border, backgroundColor: theme.cardMuted }]}>
+                <View style={styles.semHeaderLeft}>
+                  <TextInput
+                    style={[styles.semDescriptionInput, { color: theme.text }]}
+                    value={sem.description}
+                    onChangeText={(val) => {
+                      const updated = semesters.map((s) => (s.id === sem.id ? { ...s, description: val } : s));
+                      syncSemesters(updated);
+                    }}
+                    placeholder={`Year ${Math.ceil((sIndex + 1) / 2)}, Semester ${(sIndex + 1) % 2 === 1 ? 'I' : 'II'}`}
+                    placeholderTextColor={theme.textMuted}
+                  />
+                  <Text style={[styles.semSubtext, { color: theme.textMuted }]}>
+                    {stats.credits} credit hours · {sem.courses.length} courses
+                  </Text>
+                </View>
 
-          {/* Dynamic Course Rows */}
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Courses</Text>
-            <TouchableOpacity style={styles.addBtn} onPress={addCourseRow}>
-              <Ionicons name="add" size={18} color="#FFFFFF" />
-              <Text style={styles.addBtnText}>Add Course</Text>
+                <View style={styles.semHeaderRight}>
+                  {/* Term GPA Badge */}
+                  <View style={[styles.gpaPill, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                    <Text style={[styles.gpaPillLabel, { color: theme.textMuted }]}>GPA</Text>
+                    <Text style={[styles.gpaPillValue, { color: theme.tint }]}>
+                      {formatGpa(stats.gpa)}
+                    </Text>
+                  </View>
+
+                  {semesters.length > 1 && (
+                    <TouchableOpacity
+                      onPress={() => deleteSemester(sem.id)}
+                      style={[styles.deleteSemBtn, { borderColor: theme.border }]}>
+                      <Ionicons name="trash-outline" size={16} color={theme.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Courses Table */}
+              <View style={styles.coursesTable}>
+                {sem.courses.map((course, cIndex) => {
+                  const normalized = normalizeGrade(course.grade);
+                  return (
+                    <View
+                      key={course.id}
+                      style={[
+                        styles.courseRow,
+                        { borderBottomColor: theme.border },
+                        cIndex === sem.courses.length - 1 && { borderBottomWidth: 0 },
+                      ]}>
+                      
+                      {/* Course Name & Category Tags */}
+                      <View style={styles.courseMainCol}>
+                        <TextInput
+                          style={[styles.courseNameInput, { color: theme.text }]}
+                          value={course.name}
+                          onChangeText={(val) => updateCourse(sem.id, course.id, 'name', val)}
+                          placeholder="Course title e.g. General Physics"
+                          placeholderTextColor={theme.textMuted}
+                        />
+
+                        {/* Attribute Badges Row */}
+                        <View style={styles.attributesRow}>
+                          {/* Category Tag (Core / Elective) */}
+                          <TouchableOpacity
+                            onPress={() => {
+                              const nextCat = course.category === 'elective' ? 'core' : 'elective';
+                              updateCourse(sem.id, course.id, 'category', nextCat);
+                            }}
+                            style={[
+                              styles.attrBadge,
+                              {
+                                backgroundColor: course.category === 'elective' ? 'rgba(59,130,246,0.15)' : theme.cardMuted,
+                                borderColor: theme.border,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.attrBadgeText,
+                                { color: course.category === 'elective' ? '#3B82F6' : theme.textMuted },
+                              ]}>
+                              {course.category === 'elective' ? 'Elective' : 'Core'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          {/* Retake Tag */}
+                          <TouchableOpacity
+                            onPress={() => updateCourse(sem.id, course.id, 'isRetake', !course.isRetake)}
+                            style={[
+                              styles.attrBadge,
+                              {
+                                backgroundColor: course.isRetake ? 'rgba(239,68,68,0.15)' : theme.cardMuted,
+                                borderColor: theme.border,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.attrBadgeText,
+                                { color: course.isRetake ? theme.danger : theme.textMuted },
+                              ]}>
+                              {course.isRetake ? 'Retake' : 'Standard'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Credits Input */}
+                      <View style={styles.creditsCol}>
+                        <Text style={[styles.miniHeader, { color: theme.textMuted }]}>CR</Text>
+                        <TextInput
+                          style={[styles.creditsInput, { color: theme.text, backgroundColor: theme.cardMuted, borderColor: theme.border }]}
+                          value={String(course.credits)}
+                          onChangeText={(val) => updateCourse(sem.id, course.id, 'credits', val)}
+                          keyboardType="number-pad"
+                          maxLength={2}
+                        />
+                      </View>
+
+                      {/* Grade Selector Button */}
+                      <View style={styles.gradeCol}>
+                        <Text style={[styles.miniHeader, { color: theme.textMuted }]}>GRADE</Text>
+                        <TouchableOpacity
+                          onPress={() => openGradePicker(sem.id, course.id)}
+                          style={[
+                            styles.gradeBtn,
+                            {
+                              backgroundColor: GRADE_COLORS[normalized] || theme.tint,
+                            },
+                          ]}>
+                          <Text style={styles.gradeBtnText}>{normalized}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Delete Course Row */}
+                      <TouchableOpacity
+                        onPress={() => deleteCourseRow(sem.id, course.id)}
+                        style={styles.deleteCourseBtn}>
+                        <Ionicons name="close-circle-outline" size={20} color={theme.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Add Course Row Button */}
+              <TouchableOpacity
+                onPress={() => addCourseRow(sem.id)}
+                style={[styles.addCourseBtn, { borderTopColor: theme.border, backgroundColor: theme.cardMuted }]}>
+                <Ionicons name="add" size={18} color={theme.tint} style={{ marginRight: 6 }} />
+                <Text style={[styles.addCourseBtnText, { color: theme.tint }]}>Add Course</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+
+        {/* Add Semester Button */}
+        <TouchableOpacity
+          onPress={addSemester}
+          style={[styles.addSemBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.addSemIconCircle, { backgroundColor: theme.badgeBg }]}>
+            <Ionicons name="add" size={20} color={theme.tint} />
+          </View>
+          <Text style={[styles.addSemText, { color: theme.text }]}>Add New Semester</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Ethiopian Letter Grade Picker Modal */}
+      <Modal
+        visible={gradeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGradeModalVisible(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setGradeModalVisible(false)}>
+          <View style={[styles.gradePickerModal, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.gradePickerHeader}>
+              <Text style={[styles.gradePickerTitle, { color: theme.text }]}>Select Course Grade</Text>
+              <Text style={[styles.gradePickerSubtitle, { color: theme.textMuted }]}>
+                Standard Ethiopian Higher Education Scale
+              </Text>
+            </View>
+
+            <View style={styles.gradePickerGrid}>
+              {GRADE_SCALE.map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  onPress={() => handleSelectGrade(item.value)}
+                  style={[
+                    styles.gradePickerOption,
+                    {
+                      backgroundColor: GRADE_COLORS[item.value] || theme.tint,
+                    },
+                  ]}>
+                  <Text style={styles.gradePickerOptionLetter}>{item.letter}</Text>
+                  <Text style={styles.gradePickerOptionPoints}>({item.points.toFixed(2)})</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setGradeModalVisible(false)}
+              style={[styles.closeModalBtn, { borderColor: theme.border }]}>
+              <Text style={[styles.closeModalText, { color: theme.textMuted }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
-
-          {courses.map((course, index) => (
-            <View
-              key={course.id}
-              style={[
-                styles.courseRowCard,
-                { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' },
-              ]}>
-              <View style={styles.courseHeader}>
-                <TextInput
-                  style={[styles.courseInput, { color: theme.text }]}
-                  value={course.name}
-                  placeholder={`Course ${index + 1}`}
-                  placeholderTextColor="#9CA3AF"
-                  onChangeText={(val) => updateCourse(course.id, 'name', val)}
-                />
-                <TouchableOpacity onPress={() => removeCourseRow(course.id)}>
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.controlsRow}>
-                {/* Credit Stepper */}
-                <View style={styles.creditSelector}>
-                  <Text style={styles.controlLabel}>Credits:</Text>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity
-                      style={styles.stepBtn}
-                      onPress={() =>
-                        updateCourse(course.id, 'credits', Math.max(1, course.credits - 1))
-                      }>
-                      <Text style={styles.stepBtnText}>-</Text>
-                    </TouchableOpacity>
-                    <Text style={[styles.creditNumber, { color: theme.text }]}>
-                      {course.credits}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.stepBtn}
-                      onPress={() =>
-                        updateCourse(course.id, 'credits', Math.min(12, course.credits + 1))
-                      }>
-                      <Text style={styles.stepBtnText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Grade Picker Chips */}
-                <View style={styles.gradeContainer}>
-                  <Text style={styles.controlLabel}>Grade:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {GRADE_SCALE.map((item) => {
-                      const isSelected = normalizeGrade(course.grade) === item.value;
-                      return (
-                        <TouchableOpacity
-                          key={item.value}
-                          style={[
-                            styles.gradeChip,
-                            isSelected && styles.gradeChipSelected,
-                          ]}
-                          onPress={() => updateCourse(course.id, 'grade', item.value)}>
-                          <Text
-                            style={[
-                              styles.gradeChipText,
-                              isSelected && styles.gradeChipTextSelected,
-                            ]}>
-                            {item.value}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : (
-        /* MODE 2: Target CGPA Predictor */
-        <View>
-          <View
-            style={[
-              styles.predictionCard,
-              {
-                backgroundColor: prediction.possible ? '#1E3A8A' : '#7F1D1D',
-              },
-            ]}>
-            <Text style={styles.predictLabel}>
-              {prediction.possible ? 'REQUIRED AVERAGE GPA' : 'TARGET NOT ACHIEVABLE'}
-            </Text>
-            <Text style={styles.predictValue}>
-              {prediction.requiredGpa > 4.0 ? '> 4.0' : prediction.requiredGpa.toFixed(2)}
-            </Text>
-            <Text style={styles.predictSubtitle}>
-              {prediction.possible
-                ? `You need approximately ${prediction.letter} across your remaining ${remainingCreditsInput || 0} credits to achieve a ${targetCgpaInput} CGPA.`
-                : 'Even with maximum 4.00 grades in all remaining credits, the target cannot be reached.'}
-            </Text>
-          </View>
-
-          <View style={[styles.inputGroup, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}>
-            <Text style={styles.inputLabel}>Current CGPA</Text>
-            <TextInput
-              style={[styles.numericInput, { color: theme.text }]}
-              value={currentCgpaInput}
-              keyboardType="decimal-pad"
-              onChangeText={setCurrentCgpaInput}
-            />
-
-            <Text style={styles.inputLabel}>Completed Credits</Text>
-            <TextInput
-              style={[styles.numericInput, { color: theme.text }]}
-              value={completedCreditsInput}
-              keyboardType="number-pad"
-              onChangeText={setCompletedCreditsInput}
-            />
-
-            <Text style={styles.inputLabel}>Desired Target CGPA</Text>
-            <TextInput
-              style={[styles.numericInput, { color: theme.text }]}
-              value={targetCgpaInput}
-              keyboardType="decimal-pad"
-              onChangeText={setTargetCgpaInput}
-            />
-
-            <Text style={styles.inputLabel}>Remaining Credits</Text>
-            <TextInput
-              style={[styles.numericInput, { color: theme.text }]}
-              value={remainingCreditsInput}
-              keyboardType="number-pad"
-              onChangeText={setRemainingCreditsInput}
-            />
-          </View>
-        </View>
-      )}
-    </ScrollView>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
 }
 
@@ -288,207 +427,265 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  modeToggle: {
+  liveBar: {
     flexDirection: 'row',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  toggleBtn: {
-    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-around',
     paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  liveBarItem: {
     alignItems: 'center',
-    borderRadius: 8,
   },
-  toggleBtnActive: {
-    backgroundColor: '#2563EB',
-  },
-  toggleBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  toggleTextActive: {
-    color: '#FFFFFF',
-  },
-  resultBanner: {
-    backgroundColor: '#2563EB',
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  bannerLabel: {
-    color: '#BFDBFE',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  bannerValue: {
-    color: '#FFFFFF',
-    fontSize: 40,
+  liveBarLabel: {
+    fontSize: 9,
     fontWeight: '800',
-    marginTop: 4,
+    letterSpacing: 0.6,
   },
-  bannerRight: {
-    alignItems: 'flex-end',
-  },
-  bannerSubLabel: {
-    color: '#BFDBFE',
-    fontSize: 12,
-  },
-  bannerSubVal: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
+  liveBarValue: {
+    fontSize: 16,
+    fontWeight: '900',
     marginTop: 2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+  liveBarDivider: {
+    width: 1,
+    height: 24,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
+    gap: 16,
   },
-  addBtn: {
-    backgroundColor: '#2563EB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  courseRowCard: {
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
+  semCard: {
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.2)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  courseHeader: {
+  semHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
   },
-  courseInput: {
-    fontSize: 16,
-    fontWeight: '700',
+  semHeaderLeft: {
     flex: 1,
+    marginRight: 10,
   },
-  controlsRow: {
-    flexDirection: 'column',
-    gap: 10,
+  semDescriptionInput: {
+    fontSize: 15,
+    fontWeight: '800',
+    padding: 0,
+    letterSpacing: -0.2,
   },
-  controlLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
+  semSubtext: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
-  creditSelector: {
+  semHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-  stepper: {
+  gpaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(156, 163, 175, 0.15)',
-    borderRadius: 8,
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
   },
-  stepBtn: {
+  gpaPillLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  gpaPillValue: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  deleteSemBtn: {
     width: 32,
     height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  stepBtnText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2563EB',
+  coursesTable: {
+    paddingHorizontal: 14,
   },
-  creditNumber: {
-    fontSize: 15,
-    fontWeight: '700',
-    paddingHorizontal: 8,
+  courseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 10,
   },
-  gradeContainer: {
+  courseMainCol: {
+    flex: 1,
+  },
+  courseNameInput: {
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 4,
+  },
+  attributesRow: {
+    flexDirection: 'row',
+    gap: 6,
     marginTop: 2,
   },
-  gradeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(156, 163, 175, 0.15)',
-    marginRight: 6,
+  attrBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
   },
-  gradeChipSelected: {
-    backgroundColor: '#2563EB',
-  },
-  gradeChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  gradeChipTextSelected: {
-    color: '#FFFFFF',
-  },
-  predictionCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-  },
-  predictLabel: {
-    color: '#BFDBFE',
-    fontSize: 11,
+  attrBadgeText: {
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
-  predictValue: {
-    color: '#FFFFFF',
-    fontSize: 44,
+  creditsCol: {
+    alignItems: 'center',
+    width: 38,
+  },
+  miniHeader: {
+    fontSize: 8,
     fontWeight: '800',
-    marginVertical: 8,
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  predictSubtitle: {
-    color: '#E0E7FF',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  inputGroup: {
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.2)',
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  numericInput: {
-    borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.3)',
+  creditsInput: {
+    width: 36,
+    height: 34,
     borderRadius: 8,
-    paddingHorizontal: 12,
+    borderWidth: 1,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '800',
+    padding: 0,
+  },
+  gradeCol: {
+    alignItems: 'center',
+    width: 48,
+  },
+  gradeBtn: {
+    width: 46,
+    height: 34,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gradeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  deleteCourseBtn: {
+    padding: 4,
+  },
+  addCourseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  addCourseBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  addSemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+  },
+  addSemIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addSemText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  gradePickerModal: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  gradePickerHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  gradePickerTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  gradePickerSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  gradePickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  gradePickerOption: {
+    width: 72,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gradePickerOptionLetter: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '900',
+  },
+  gradePickerOptionPoints: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  closeModalBtn: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  closeModalText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

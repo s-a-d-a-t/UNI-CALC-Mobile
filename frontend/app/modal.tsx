@@ -11,18 +11,23 @@ import {
   useColorScheme,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import Colors from '@/constants/Colors';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Colors } from '@/constants/Colors';
 import { AcademicAPI } from '@/src/api/academic';
 
 export default function AuthModalScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: 'login' | 'register' }>();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>(
+    params.mode === 'register' ? 'register' : 'login'
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -44,10 +49,9 @@ export default function AuthModalScreen() {
     try {
       if (mode === 'login') {
         await AcademicAPI.login(email.trim(), password);
-        Alert.alert('Success', 'Logged in successfully!');
       } else {
-        if (!name) {
-          setError('Name is required for registration.');
+        if (!name.trim()) {
+          setError('Full Name is required for registration.');
           setLoading(false);
           return;
         }
@@ -58,13 +62,10 @@ export default function AuthModalScreen() {
           major: major.trim() || undefined,
           studentId: studentId.trim() || undefined,
         });
-        Alert.alert('Welcome', 'Account registered successfully!');
       }
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)');
-      }
+      
+      // Navigate straight to the authenticated dashboard
+      router.replace('/(tabs)');
     } catch (err: any) {
       const msg = err.response?.data?.error || err.message || 'Authentication failed.';
       setError(msg);
@@ -76,39 +77,68 @@ export default function AuthModalScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#111827' : '#F9FAFB' }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header Icon */}
-        <View style={styles.iconContainer}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="school" size={40} color="#2563EB" />
+      style={[styles.container, { backgroundColor: theme.background }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        {/* Top Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/landing'))}>
+            <Ionicons name="arrow-back" size={20} color={theme.text} />
+          </TouchableOpacity>
+
+          <View style={[styles.logoBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Image
+              source={require('../assets/images/logo1.png')}
+              style={styles.logoImg}
+              resizeMode="cover"
+            />
           </View>
-          <Text style={[styles.title, { color: theme.text }]}>Uni-Calc Sync</Text>
-          <Text style={styles.subtitle}>
-            Log in with your existing web credentials to sync your grades, terms, and logs.
+          <Text style={[styles.title, { color: theme.text }]}>UniCalc Ethio</Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+            {mode === 'login'
+              ? 'Sign in to sync your academic performance'
+              : 'Create your academic analytics profile'}
           </Text>
         </View>
 
         {/* Tab Switcher */}
-        <View style={[styles.tabContainer, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#E5E7EB' }]}>
+        <View style={[styles.tabContainer, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
           <TouchableOpacity
-            style={[styles.tabBtn, mode === 'login' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              mode === 'login' && [styles.tabBtnActive, { backgroundColor: theme.card, borderColor: theme.border }],
+            ]}
             onPress={() => {
               setMode('login');
               setError('');
             }}>
-            <Text style={[styles.tabText, mode === 'login' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: mode === 'login' ? theme.tint : theme.textMuted },
+                mode === 'login' && styles.tabTextActive,
+              ]}>
               Sign In
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, mode === 'register' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              mode === 'register' && [styles.tabBtnActive, { backgroundColor: theme.card, borderColor: theme.border }],
+            ]}
             onPress={() => {
               setMode('register');
               setError('');
             }}>
-            <Text style={[styles.tabText, mode === 'register' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                { color: mode === 'register' ? theme.tint : theme.textMuted },
+                mode === 'register' && styles.tabTextActive,
+              ]}>
               Create Account
             </Text>
           </TouchableOpacity>
@@ -116,84 +146,107 @@ export default function AuthModalScreen() {
 
         {/* Error Notice */}
         {error ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={18} color="#DC2626" />
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={[styles.errorBox, { backgroundColor: theme.dangerBg, borderColor: theme.danger }]}>
+            <Ionicons name="alert-circle" size={18} color={theme.danger} />
+            <Text style={[styles.errorText, { color: theme.danger }]}>{error}</Text>
           </View>
         ) : null}
 
-        {/* Form Inputs */}
-        <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}>
+        {/* Form Card */}
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           {mode === 'register' && (
             <>
-              <Text style={styles.label}>Full Name</Text>
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="e.g. Sadat"
-                placeholderTextColor="#9CA3AF"
-                value={name}
-                onChangeText={setName}
-              />
+              <Text style={[styles.label, { color: theme.text }]}>Full Name</Text>
+              <View style={[styles.inputContainer, { borderColor: theme.border, backgroundColor: theme.cardMuted }]}>
+                <Ionicons name="person-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="e.g. Abebe Bikila"
+                  placeholderTextColor={theme.textMuted}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                />
+              </View>
 
-              <Text style={styles.label}>Major / Department</Text>
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="e.g. Computer Science"
-                placeholderTextColor="#9CA3AF"
-                value={major}
-                onChangeText={setMajor}
-              />
+              <Text style={[styles.label, { color: theme.text }]}>Major / Department</Text>
+              <View style={[styles.inputContainer, { borderColor: theme.border, backgroundColor: theme.cardMuted }]}>
+                <Ionicons name="book-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="e.g. Computer Science"
+                  placeholderTextColor={theme.textMuted}
+                  value={major}
+                  onChangeText={setMajor}
+                />
+              </View>
 
-              <Text style={styles.label}>Student ID (Optional)</Text>
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="e.g. ST-2022-8491"
-                placeholderTextColor="#9CA3AF"
-                value={studentId}
-                onChangeText={setStudentId}
-              />
+              <Text style={[styles.label, { color: theme.text }]}>Student ID (Optional)</Text>
+              <View style={[styles.inputContainer, { borderColor: theme.border, backgroundColor: theme.cardMuted }]}>
+                <Ionicons name="card-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="e.g. UGR/1234/14"
+                  placeholderTextColor={theme.textMuted}
+                  value={studentId}
+                  onChangeText={setStudentId}
+                  autoCapitalize="characters"
+                />
+              </View>
             </>
           )}
 
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            style={[styles.input, { color: theme.text }]}
-            placeholder="student@university.edu"
-            placeholderTextColor="#9CA3AF"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
+          <Text style={[styles.label, { color: theme.text }]}>Email Address</Text>
+          <View style={[styles.inputContainer, { borderColor: theme.border, backgroundColor: theme.cardMuted }]}>
+            <Ionicons name="mail-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: theme.text }]}
+              placeholder="e.g. student@university.edu"
+              placeholderTextColor={theme.textMuted}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
 
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={[styles.input, { color: theme.text }]}
-            placeholder="••••••••"
-            placeholderTextColor="#9CA3AF"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+          <Text style={[styles.label, { color: theme.text }]}>Password</Text>
+          <View style={[styles.inputContainer, { borderColor: theme.border, backgroundColor: theme.cardMuted }]}>
+            <Ionicons name="lock-closed-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: theme.text }]}
+              placeholder="••••••••"
+              placeholderTextColor={theme.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
 
+          {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+            style={[styles.submitBtn, { backgroundColor: theme.tint }]}
             onPress={handleSubmit}
             disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.submitBtnText}>
-                {mode === 'login' ? 'Sign In & Sync' : 'Register Account'}
+                {mode === 'login' ? 'Sign In' : 'Create Account'}
               </Text>
             )}
           </TouchableOpacity>
         </View>
 
+        {/* Guest Continue */}
         <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
-          <Text style={styles.closeBtnText}>Continue as Guest / Offline</Text>
+          style={styles.guestBtn}
+          onPress={() => router.replace('/(tabs)')}>
+          <Text style={[styles.guestText, { color: theme.textMuted }]}>
+            Skip for now · <Text style={{ color: theme.tint, fontWeight: '700' }}>Explore as Guest</Text>
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -205,116 +258,154 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingTop: 36,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingBottom: 40,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
-  iconContainer: {
+  header: {
     alignItems: 'center',
     marginBottom: 24,
+    position: 'relative',
   },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#DBEAFE',
+  backBtn: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
+  logoImg: {
+    width: '100%',
+    height: '100%',
+  },
   title: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '900',
+    letterSpacing: -0.4,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 13,
-    color: '#6B7280',
     textAlign: 'center',
-    marginTop: 6,
-    paddingHorizontal: 16,
-    lineHeight: 18,
+    fontWeight: '500',
+    maxWidth: 280,
   },
   tabContainer: {
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
     padding: 4,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   tabBtn: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 10,
   },
   tabBtnActive: {
-    backgroundColor: '#2563EB',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6B7280',
   },
   tabTextActive: {
-    color: '#FFFFFF',
+    fontWeight: '800',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    padding: 12,
-    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
     gap: 8,
-    marginBottom: 14,
   },
   errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
     flex: 1,
   },
   card: {
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.2)',
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '700',
     marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    height: 48,
+  },
+  inputIcon: {
+    marginRight: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.3)',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
   },
   submitBtn: {
-    backgroundColor: '#2563EB',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
-    marginTop: 20,
-  },
-  submitBtnDisabled: {
-    opacity: 0.6,
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
   },
-  closeBtn: {
-    alignItems: 'center',
+  guestBtn: {
     marginTop: 20,
-    padding: 10,
+    alignItems: 'center',
+    paddingVertical: 8,
   },
-  closeBtnText: {
-    color: '#6B7280',
-    fontSize: 14,
-    fontWeight: '500',
+  guestText: {
+    fontSize: 13,
   },
 });

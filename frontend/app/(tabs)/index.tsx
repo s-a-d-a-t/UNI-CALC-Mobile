@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,19 +7,32 @@ import {
   TouchableOpacity,
   useColorScheme,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Colors from '@/constants/Colors';
+import { Colors } from '@/constants/Colors';
 import { AcademicAPI } from '@/src/api/academic';
-import { calculateGlobalStats, calculateSemesterStats } from '@/src/lib/gpa';
+import {
+  calculateGlobalStats,
+  calculateSemesterStats,
+  getGraduationStats,
+  getGradeDistributionData,
+  getPassFailStats,
+  getStrongestWeakestSemesters,
+  requiredGradeForTarget,
+  formatGpa,
+  GRADE_COLORS,
+} from '@/src/lib/gpa';
 import { AcademicProfile, Semester, User } from '@/src/types';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
 
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'graduation'>('overview');
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AcademicProfile>({
@@ -44,7 +57,7 @@ export default function DashboardScreen() {
       if (userProfile) setProfile(userProfile);
       if (userSemesters) setSemesters(userSemesters);
     } catch (e) {
-      console.warn('Offline or server not reachable:', e);
+      console.warn('Dashboard loadData fallback:', e);
     }
   };
 
@@ -60,123 +73,466 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  // Compute live GPA stats using our accurate engine
+  // Live academic calculations (identical to web app)
   const globalStats = calculateGlobalStats(semesters);
-  const activeSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null;
-  const activeSemesterStats = activeSemester ? calculateSemesterStats(activeSemester.courses) : null;
+  const gradStats = getGraduationStats(semesters, profile);
+  const gradeDist = getGradeDistributionData(semesters);
+  const passFail = getPassFailStats(semesters);
+  const strongestWeakest = getStrongestWeakestSemesters(semesters);
+
+  const recentSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null;
+  const recentSemesterStats = recentSemester ? calculateSemesterStats(recentSemester.courses) : null;
+
+  const targetAnalysis = requiredGradeForTarget(
+    semesters,
+    gradStats.remainingCredits,
+    profile.targetCgpa || 3.5
+  );
 
   const getStandingBadge = (cgpa: number) => {
-    if (cgpa >= 3.8) return { label: "Dean's Honor", color: '#10B981', bg: '#D1FAE5' };
-    if (cgpa >= 3.5) return { label: 'First Class', color: '#2563EB', bg: '#DBEAFE' };
-    if (cgpa >= 3.0) return { label: 'Good Standing', color: '#F59E0B', bg: '#FEF3C7' };
-    return { label: 'Academic Warning', color: '#EF4444', bg: '#FEE2E2' };
+    if (cgpa >= 3.8) return { label: "Dean's Honor", color: '#10B981', bg: isDark ? 'rgba(16,185,129,0.15)' : '#D1FAE5' };
+    if (cgpa >= 3.5) return { label: 'First Class Distinction', color: theme.tint, bg: theme.badgeBg };
+    if (cgpa >= 3.0) return { label: 'Distinction', color: theme.tint, bg: theme.badgeBg };
+    if (cgpa >= 2.5) return { label: 'Satisfactory', color: '#6B7280', bg: isDark ? '#21262D' : '#F3F4F6' };
+    if (cgpa >= 2.0) return { label: 'Academic Warning', color: '#F59E0B', bg: isDark ? 'rgba(245,158,11,0.15)' : '#FEF3C7' };
+    return { label: 'Dismissal Risk', color: '#EF4444', bg: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' };
   };
 
   const standing = getStandingBadge(globalStats.cgpa);
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colorScheme === 'dark' ? '#111827' : '#F9FAFB' }]}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.tint} />
+      }>
       
-      {/* Header Welcome & Sync Status */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.welcomeSub, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
-            {user ? 'Logged in as' : 'Welcome to Uni-Calc,'}
-          </Text>
-          <Text style={[styles.welcomeName, { color: theme.text }]}>
-            {profile.name || user?.name || 'Guest Student'}
-          </Text>
-        </View>
+      {/* Sub-tab Navigation (Overview / Analytics / Graduation) */}
+      <View style={[styles.subTabContainer, { borderBottomColor: theme.border }]}>
         <TouchableOpacity
-          style={[styles.deptPill, { backgroundColor: colorScheme === 'dark' ? '#374151' : '#E5E7EB' }]}
-          onPress={() => router.push('/modal')}>
-          <Text style={[styles.deptText, { color: theme.text }]}>
-            {user ? '● Synced' : 'Sync Account'}
+          onPress={() => setActiveTab('overview')}
+          style={[
+            styles.subTabBtn,
+            activeTab === 'overview' && [styles.subTabBtnActive, { borderBottomColor: theme.tint }],
+          ]}>
+          <Ionicons
+            name="bar-chart-outline"
+            size={16}
+            color={activeTab === 'overview' ? theme.tint : theme.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.subTabText,
+              { color: activeTab === 'overview' ? theme.tint : theme.textMuted },
+              activeTab === 'overview' && styles.subTabTextActive,
+            ]}>
+            Overview
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setActiveTab('analytics')}
+          style={[
+            styles.subTabBtn,
+            activeTab === 'analytics' && [styles.subTabBtnActive, { borderBottomColor: theme.tint }],
+          ]}>
+          <Ionicons
+            name="trending-up-outline"
+            size={16}
+            color={activeTab === 'analytics' ? theme.tint : theme.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.subTabText,
+              { color: activeTab === 'analytics' ? theme.tint : theme.textMuted },
+              activeTab === 'analytics' && styles.subTabTextActive,
+            ]}>
+            Analytics
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setActiveTab('graduation')}
+          style={[
+            styles.subTabBtn,
+            activeTab === 'graduation' && [styles.subTabBtnActive, { borderBottomColor: theme.tint }],
+          ]}>
+          <Ionicons
+            name="school-outline"
+            size={16}
+            color={activeTab === 'graduation' ? theme.tint : theme.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.subTabText,
+              { color: activeTab === 'graduation' ? theme.tint : theme.textMuted },
+              activeTab === 'graduation' && styles.subTabTextActive,
+            ]}>
+            Graduation
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Primary CGPA Highlight Card */}
-      <View style={styles.cgpaCard}>
-        <View style={styles.cgpaHeader}>
-          <Text style={styles.cgpaLabel}>CUMULATIVE GPA</Text>
-          <View style={[styles.badge, { backgroundColor: standing.bg }]}>
-            <Text style={[styles.badgeText, { color: standing.color }]}>
-              {standing.label}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.cgpaNumber}>{globalStats.cgpa.toFixed(2)}</Text>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Credits Earned</Text>
-            <Text style={styles.statValue}>
-              {globalStats.totalCredits} / {profile.graduationCredits || 145}
-            </Text>
-          </View>
-
-          <View style={styles.statDivider} />
-
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Target CGPA</Text>
-            <Text style={styles.statValue}>{(profile.targetCgpa || 3.5).toFixed(2)}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Active Semester Overview */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Current Term</Text>
-      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}>
-        {activeSemester ? (
-          <View style={styles.semesterRow}>
-            <View>
-              <Text style={[styles.semesterName, { color: theme.text }]}>
-                {activeSemester.description || `Semester ${activeSemester.number}`}
+      {/* OVERVIEW TAB */}
+      {activeTab === 'overview' && (
+        <View style={styles.tabContent}>
+          {/* Top 4 KPI Cards Grid */}
+          <View style={styles.kpiGrid}>
+            {/* Card 1: Cumulative CGPA */}
+            <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Cumulative CGPA</Text>
+              <Text style={[styles.kpiValue, { color: theme.text }]}>
+                {formatGpa(globalStats.cgpa)}
               </Text>
-              <Text style={styles.semesterMeta}>
-                {activeSemester.courses?.length || 0} Courses Enrolled
+              <View style={[styles.kpiFooter, { borderTopColor: theme.border }]}>
+                <Text style={[styles.kpiSubtext, { color: theme.textMuted }]}>Out of 4.00 Scale</Text>
+              </View>
+            </View>
+
+            {/* Card 2: Credits Completed */}
+            <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Credits Completed</Text>
+              <Text style={[styles.kpiValue, { color: theme.text }]}>
+                {gradStats.totalCredits}{' '}
+                <Text style={[styles.kpiValueSmall, { color: theme.textMuted }]}>
+                  / {gradStats.gradGoal}
+                </Text>
+              </Text>
+              <View style={styles.kpiProgressContainer}>
+                <View style={styles.kpiProgressHeader}>
+                  <Text style={[styles.kpiProgressLabel, { color: theme.textMuted }]}>Degree Progress</Text>
+                  <Text style={[styles.kpiProgressLabel, { color: theme.tint, fontWeight: '800' }]}>
+                    {gradStats.progressPercent}%
+                  </Text>
+                </View>
+                <View style={[styles.progressBarBg, { backgroundColor: theme.cardMuted }]}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      { backgroundColor: theme.tint, width: `${gradStats.progressPercent}%` },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Card 3: Recent Term GPA */}
+            <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Recent Term GPA</Text>
+              <View style={styles.recentGpaRow}>
+                <Text style={[styles.kpiValue, { color: theme.text }]}>
+                  {recentSemesterStats ? formatGpa(recentSemesterStats.gpa) : '—'}
+                </Text>
+                {recentSemesterStats && recentSemesterStats.gpa >= globalStats.cgpa ? (
+                  <View style={[styles.trendBadge, { backgroundColor: theme.successBg }]}>
+                    <Ionicons name="arrow-up" size={12} color={theme.success} />
+                  </View>
+                ) : (
+                  <View style={[styles.trendBadge, { backgroundColor: theme.dangerBg }]}>
+                    <Ionicons name="arrow-down" size={12} color={theme.danger} />
+                  </View>
+                )}
+              </View>
+              <View style={[styles.kpiFooter, { borderTopColor: theme.border }]}>
+                <Text style={[styles.kpiSubtext, { color: theme.textMuted }]}>
+                  {recentSemester?.description || 'No term records yet'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Card 4: Academic Standing */}
+            <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Academic Standing</Text>
+              <View style={[styles.standingBadge, { backgroundColor: standing.bg }]}>
+                <Ionicons name="ribbon" size={14} color={standing.color} style={{ marginRight: 6 }} />
+                <Text style={[styles.standingBadgeText, { color: standing.color }]}>
+                  {standing.label}
+                </Text>
+              </View>
+              <View style={[styles.kpiFooter, { borderTopColor: theme.border }]}>
+                <Text style={[styles.kpiSubtext, { color: theme.textMuted }]}>
+                  {globalStats.cgpa >= 2.0 ? 'Official Good Standing' : 'Academic Probation'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Grade Distribution Section */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                <Ionicons name="pie-chart-outline" size={18} color={theme.tint} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Grade Distribution</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                  Letter grade frequency and earned credits
+                </Text>
+              </View>
+            </View>
+
+            {gradeDist.length > 0 ? (
+              <View style={styles.gradeGrid}>
+                {gradeDist.map((item) => (
+                  <View
+                    key={item.name}
+                    style={[styles.gradeItem, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                    <View style={styles.gradeItemHeader}>
+                      <View
+                        style={[
+                          styles.gradeColorDot,
+                          { backgroundColor: GRADE_COLORS[item.name] || theme.tint },
+                        ]}
+                      />
+                      <Text style={[styles.gradeLetter, { color: theme.text }]}>{item.name}</Text>
+                      <Text style={[styles.gradePts, { color: theme.textMuted }]}>
+                        ({item.points.toFixed(2)})
+                      </Text>
+                    </View>
+                    <Text style={[styles.gradeCount, { color: theme.text }]}>
+                      {item.courses} {item.courses === 1 ? 'course' : 'courses'}
+                    </Text>
+                    <Text style={[styles.gradeCredits, { color: theme.textMuted }]}>
+                      {item.credits} hrs ({item.creditPct}%)
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.emptyNotice, { color: theme.textMuted }]}>
+                No course grades entered yet. Add courses in the Calculator tab to view distribution curves.
+              </Text>
+            )}
+          </View>
+
+          {/* Pass vs. Fail Breakdown */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={theme.tint} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Course Pass vs. Fail</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                  Credit completion integrity metrics
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.passFailRow}>
+              <View style={[styles.passFailCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <Text style={[styles.passFailLabel, { color: theme.textMuted }]}>PASSED</Text>
+                <Text style={[styles.passFailValue, { color: '#10B981' }]}>
+                  {passFail.passedCourses} Courses
+                </Text>
+                <Text style={[styles.passFailSub, { color: theme.textMuted }]}>
+                  {passFail.passedCredits} Credits ({passFail.passRateCourses}%)
+                </Text>
+              </View>
+
+              <View style={[styles.passFailCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <Text style={[styles.passFailLabel, { color: theme.textMuted }]}>FAILED / RETAKE</Text>
+                <Text style={[styles.passFailValue, { color: '#EF4444' }]}>
+                  {passFail.failedCourses} Courses
+                </Text>
+                <Text style={[styles.passFailSub, { color: theme.textMuted }]}>
+                  {passFail.failedCredits} Credits
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* ANALYTICS TAB */}
+      {activeTab === 'analytics' && (
+        <View style={styles.tabContent}>
+          {/* Strongest & Weakest Semesters */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 12 }]}>
+              Semester Performance Highlights
+            </Text>
+
+            <View style={styles.highlightRow}>
+              {/* Strongest */}
+              <View style={[styles.highlightCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <View style={styles.highlightHeader}>
+                  <Ionicons name="trending-up" size={16} color="#10B981" />
+                  <Text style={[styles.highlightHeaderTitle, { color: '#10B981' }]}>Highest Term</Text>
+                </View>
+                <Text style={[styles.highlightSemName, { color: theme.text }]}>
+                  {strongestWeakest.strongest?.name || 'No term data'}
+                </Text>
+                <Text style={[styles.highlightGpa, { color: theme.tint }]}>
+                  {strongestWeakest.strongest ? formatGpa(strongestWeakest.strongest.GPA) : '—'} GPA
+                </Text>
+                <Text style={[styles.highlightCredits, { color: theme.textMuted }]}>
+                  {strongestWeakest.strongest ? `${strongestWeakest.strongest.Credits} credit hours` : ''}
+                </Text>
+              </View>
+
+              {/* Weakest */}
+              <View style={[styles.highlightCol, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <View style={styles.highlightHeader}>
+                  <Ionicons name="trending-down" size={16} color="#EF4444" />
+                  <Text style={[styles.highlightHeaderTitle, { color: '#EF4444' }]}>Lowest Term</Text>
+                </View>
+                <Text style={[styles.highlightSemName, { color: theme.text }]}>
+                  {strongestWeakest.weakest?.name || 'No term data'}
+                </Text>
+                <Text style={[styles.highlightGpa, { color: '#EF4444' }]}>
+                  {strongestWeakest.weakest ? formatGpa(strongestWeakest.weakest.GPA) : '—'} GPA
+                </Text>
+                <Text style={[styles.highlightCredits, { color: theme.textMuted }]}>
+                  {strongestWeakest.weakest ? `${strongestWeakest.weakest.Credits} credit hours` : ''}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Metrics */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 14 }]}>Academic Stats</Text>
+
+            <View style={styles.metricRow}>
+              <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Total Semesters Logged</Text>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{semesters.length} terms</Text>
+            </View>
+            <View style={[styles.metricDivider, { backgroundColor: theme.border }]} />
+
+            <View style={styles.metricRow}>
+              <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Total Points Earned</Text>
+              <Text style={[styles.metricValue, { color: theme.text }]}>{globalStats.totalPoints} pts</Text>
+            </View>
+            <View style={[styles.metricDivider, { backgroundColor: theme.border }]} />
+
+            <View style={styles.metricRow}>
+              <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Target CGPA Gap</Text>
+              <Text
+                style={[
+                  styles.metricValue,
+                  { color: globalStats.cgpa >= profile.targetCgpa ? '#10B981' : theme.tint },
+                ]}>
+                {globalStats.cgpa >= profile.targetCgpa
+                  ? 'Goal Exceeded'
+                  : `-${(profile.targetCgpa - globalStats.cgpa).toFixed(2)} to target`}
               </Text>
             </View>
-            <View style={styles.semesterGpaPill}>
-              <Text style={styles.semesterGpaLabel}>Term GPA</Text>
-              <Text style={styles.semesterGpaVal}>
-                {(activeSemesterStats?.gpa || 0).toFixed(2)}
+          </View>
+        </View>
+      )}
+
+      {/* GRADUATION ROADMAP TAB */}
+      {activeTab === 'graduation' && (
+        <View style={styles.tabContent}>
+          {/* Target Honour Roadmap Card */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
+                <Ionicons name="trophy-outline" size={18} color={theme.tint} />
+              </View>
+              <View>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Target Honour Forecast</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textMuted }]}>
+                  Goal: {profile.targetCgpa.toFixed(2)} CGPA Honours
+                </Text>
+              </View>
+            </View>
+
+            {targetAnalysis ? (
+              <View style={[styles.targetBox, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <Text style={[styles.targetBoxLabel, { color: theme.textMuted }]}>
+                  REQUIRED FUTURE AVERAGE GPA
+                </Text>
+                <Text
+                  style={[
+                    styles.targetBoxValue,
+                    { color: targetAnalysis.possible ? theme.tint : '#EF4444' },
+                  ]}>
+                  {targetAnalysis.possible
+                    ? targetAnalysis.requiredGpa <= 0
+                      ? 'Goal Already Secured'
+                      : `${targetAnalysis.requiredGpa.toFixed(2)} GPA`
+                    : 'Goal Requires > 4.00 (Exceeds Scale)'}
+                </Text>
+                <Text style={[styles.targetBoxDesc, { color: theme.textMuted }]}>
+                  {targetAnalysis.possible
+                    ? `Maintain an average of ~${targetAnalysis.letter || targetAnalysis.requiredGpa.toFixed(2)} across your remaining ${gradStats.remainingCredits} credit hours to achieve your target graduation honours.`
+                    : 'To reach your target CGPA, you would need higher points than a 4.00 max scale. Consider retaking low-grade courses to boost your base CGPA.'}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Core vs. Elective Credits Breakdown */}
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 14 }]}>
+              Degree Credit Load Breakdown
+            </Text>
+
+            {/* Core */}
+            <View style={styles.creditBarBlock}>
+              <View style={styles.creditBarHeader}>
+                <Text style={[styles.creditBarLabel, { color: theme.text }]}>Core Major Credits</Text>
+                <Text style={[styles.creditBarValue, { color: theme.textMuted }]}>
+                  {gradStats.coreCredits} / {gradStats.coreRequired} hrs
+                </Text>
+              </View>
+              <View style={[styles.progressBarBg, { backgroundColor: theme.cardMuted }]}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      backgroundColor: theme.tint,
+                      width: `${Math.min(
+                        Math.round((gradStats.coreCredits / gradStats.coreRequired) * 100),
+                        100
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Elective */}
+            <View style={styles.creditBarBlock}>
+              <View style={styles.creditBarHeader}>
+                <Text style={[styles.creditBarLabel, { color: theme.text }]}>Elective Credits</Text>
+                <Text style={[styles.creditBarValue, { color: theme.textMuted }]}>
+                  {gradStats.electiveCredits} / {gradStats.electiveRequired} hrs
+                </Text>
+              </View>
+              <View style={[styles.progressBarBg, { backgroundColor: theme.cardMuted }]}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      backgroundColor: '#3B82F6',
+                      width: `${Math.min(
+                        Math.round((gradStats.electiveCredits / gradStats.electiveRequired) * 100),
+                        100
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Remaining Summary */}
+            <View style={[styles.remainingPill, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+              <Ionicons name="information-circle-outline" size={16} color={theme.textMuted} />
+              <Text style={[styles.remainingText, { color: theme.textMuted }]}>
+                {gradStats.remainingCredits} total credits remaining until degree completion.
               </Text>
             </View>
           </View>
-        ) : (
-          <Text style={{ color: '#6B7280' }}>No semesters recorded yet. Add one in Planner.</Text>
-        )}
-      </View>
-
-      {/* Quick Action Shortcuts */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</Text>
-      <View style={styles.actionsGrid}>
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}
-          onPress={() => router.push('/(tabs)/calculator')}>
-          <View style={[styles.actionIconBox, { backgroundColor: '#DBEAFE' }]}>
-            <Ionicons name="calculator" size={24} color="#2563EB" />
-          </View>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Predictor</Text>
-          <Text style={styles.actionSubtitle}>Target GPA needed</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colorScheme === 'dark' ? '#1F2937' : '#FFFFFF' }]}
-          onPress={() => router.push('/(tabs)/planner')}>
-          <View style={[styles.actionIconBox, { backgroundColor: '#D1FAE5' }]}>
-            <Ionicons name="school" size={24} color="#10B981" />
-          </View>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Semesters</Text>
-          <Text style={styles.actionSubtitle}>Manage courses</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -185,159 +541,331 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentContainer: {
+  scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
-  header: {
+  subTabContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    marginBottom: 16,
+  },
+  subTabBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  welcomeSub: {
+  subTabBtnActive: {},
+  subTabText: {
     fontSize: 13,
-    fontWeight: '500',
-  },
-  welcomeName: {
-    fontSize: 22,
     fontWeight: '700',
   },
-  deptPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  subTabTextActive: {
+    fontWeight: '900',
   },
-  deptText: {
+  tabContent: {
+    gap: 14,
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  kpiCard: {
+    flex: 1,
+    minWidth: 150,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  kpiLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  kpiValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginVertical: 4,
+  },
+  kpiValueSmall: {
     fontSize: 12,
     fontWeight: '600',
   },
-  cgpaCard: {
-    backgroundColor: '#1E3A8A',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: '#1E3A8A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  cgpaHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cgpaLabel: {
-    color: '#93C5FD',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cgpaNumber: {
-    color: '#FFFFFF',
-    fontSize: 48,
-    fontWeight: '800',
-    marginVertical: 10,
-  },
-  statsRow: {
-    flexDirection: 'row',
+  kpiFooter: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    paddingTop: 14,
+    paddingTop: 6,
     marginTop: 4,
   },
-  statItem: {
-    flex: 1,
+  kpiSubtext: {
+    fontSize: 10,
+    fontWeight: '600',
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    marginHorizontal: 16,
+  kpiProgressContainer: {
+    marginTop: 4,
   },
-  statLabel: {
-    color: '#BFDBFE',
-    fontSize: 12,
+  kpiProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  kpiProgressLabel: {
+    fontSize: 9,
     fontWeight: '700',
-    marginTop: 2,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 12,
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    width: '100%',
   },
-  card: {
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  recentGpaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  trendBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  standingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginVertical: 6,
+  },
+  standingBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sectionCard: {
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.2)',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  semesterRow: {
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  cardSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  gradeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  gradeItem: {
+    width: (Dimensions.get('window').width - 72) / 3,
+    maxWidth: 110,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 8,
+  },
+  gradeItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  gradeColorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  gradeLetter: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gradePts: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  gradeCount: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  gradeCredits: {
+    fontSize: 9,
+    fontWeight: '500',
+  },
+  emptyNotice: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 14,
+  },
+  passFailRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  passFailCol: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+  },
+  passFailLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  passFailValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  passFailSub: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  highlightCol: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+  },
+  highlightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  highlightHeaderTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  highlightSemName: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  highlightGpa: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  highlightCredits: {
+    fontSize: 10,
+  },
+  metricRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 6,
   },
-  semesterName: {
-    fontSize: 16,
-    fontWeight: '700',
+  metricLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  semesterMeta: {
+  metricValue: {
     fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
+    fontWeight: '800',
   },
-  semesterGpaPill: {
-    alignItems: 'flex-end',
+  metricDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 4,
   },
-  semesterGpaLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  semesterGpaVal: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
+  targetBox: {
     borderRadius: 14,
-    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(156, 163, 175, 0.2)',
+    padding: 14,
   },
-  actionIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+  targetBoxLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  targetBoxValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  targetBoxDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  creditBarBlock: {
     marginBottom: 12,
   },
-  actionTitle: {
-    fontSize: 15,
+  creditBarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  creditBarLabel: {
+    fontSize: 12,
     fontWeight: '700',
   },
-  actionSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
+  creditBarValue: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  remainingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  remainingText: {
+    fontSize: 11,
+    fontWeight: '600',
+    flex: 1,
   },
 });

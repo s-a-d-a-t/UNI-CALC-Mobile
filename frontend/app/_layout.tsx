@@ -1,22 +1,21 @@
 import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { TokenStorage } from '@/src/lib/storage';
 
 export {
-  // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  anchor: '(tabs)',
+  anchor: 'landing',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+// Prevent splash from auto-hiding
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
@@ -25,13 +24,12 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    // Hide splash as soon as fonts are loaded or if there's an error
     if (loaded || error) {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
 
-  // Fallback: ALWAYS hide splash screen after 1 second so it never freezes
+  // Fallback timeout to ensure splash screen unlocks
   useEffect(() => {
     const timer = setTimeout(() => {
       SplashScreen.hideAsync().catch(() => {});
@@ -44,12 +42,30 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
+
+  useEffect(() => {
+    async function checkAuthSession() {
+      try {
+        const cookie = await TokenStorage.getSessionCookie();
+        const token = await TokenStorage.getAccessToken();
+        // If neither session cookie nor JWT token exists, show landing page
+        if (!cookie && !token) {
+          router.replace('/landing');
+        }
+      } catch (e) {
+        router.replace('/landing');
+      }
+    }
+    checkAuthSession();
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="landing" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );
