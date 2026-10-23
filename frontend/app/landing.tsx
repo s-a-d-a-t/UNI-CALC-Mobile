@@ -6,21 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  useColorScheme,
   StatusBar,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Colors } from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
 export default function LandingScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const { isDark, colors: theme, toggleTheme } = useTheme();
 
   const handleGetStarted = () => {
     router.push({ pathname: '/modal', params: { mode: 'register' } });
@@ -60,6 +57,20 @@ export default function LandingScreen() {
         </View>
 
         <View style={styles.navActions}>
+          {/* Dedicated Theme Toggle Button */}
+          <TouchableOpacity
+            onPress={toggleTheme}
+            style={[styles.themeToggleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+            activeOpacity={0.7}
+            accessibilityLabel="Toggle Theme"
+          >
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={18}
+              color={isDark ? '#EAB308' : '#4F46E5'}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handleLogin} style={styles.signInBtn}>
             <Text style={[styles.signInText, { color: theme.textMuted }]}>Sign In</Text>
           </TouchableOpacity>
@@ -292,7 +303,15 @@ const styles = StyleSheet.create({
   navActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+  },
+  themeToggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   signInBtn: {
     paddingVertical: 6,

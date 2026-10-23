@@ -8,22 +8,19 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  useColorScheme,
   KeyboardAvoidingView,
   Platform,
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Colors } from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { AcademicAPI } from '@/src/api/academic';
 
 export default function AuthModalScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: 'login' | 'register' }>();
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const { isDark, colors: theme, toggleTheme } = useTheme();
 
   const [mode, setMode] = useState<'login' | 'register'>(
     params.mode === 'register' ? 'register' : 'login'
@@ -86,6 +83,18 @@ export default function AuthModalScreen() {
             style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/landing'))}>
             <Ionicons name="arrow-back" size={20} color={theme.text} />
+          </TouchableOpacity>
+
+          {/* Dedicated Theme Toggle Button */}
+          <TouchableOpacity
+            style={[styles.themeToggleBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+            onPress={toggleTheme}
+            accessibilityLabel="Toggle Theme">
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={18}
+              color={isDark ? '#EAB308' : '#4F46E5'}
+            />
           </TouchableOpacity>
 
           <View style={[styles.logoBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -273,6 +282,17 @@ const styles = StyleSheet.create({
   backBtn: {
     position: 'absolute',
     left: 0,
+    top: 0,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  themeToggleBtn: {
+    position: 'absolute',
+    right: 0,
     top: 0,
     width: 38,
     height: 38,

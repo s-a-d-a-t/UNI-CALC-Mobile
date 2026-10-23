@@ -5,13 +5,12 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  useColorScheme,
   RefreshControl,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Colors } from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { AcademicAPI } from '@/src/api/academic';
 import {
   calculateGlobalStats,
@@ -28,9 +27,7 @@ import { AcademicProfile, Semester, User } from '@/src/types';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const { isDark, colors: theme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'graduation'>('overview');
   const [refreshing, setRefreshing] = useState(false);

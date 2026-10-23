@@ -6,22 +6,19 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  useColorScheme,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Colors } from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { AcademicAPI } from '@/src/api/academic';
 import { LocalCache } from '@/src/lib/storage';
 import { AcademicProfile, User } from '@/src/types';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const { isDark, colors: theme, toggleTheme } = useTheme();
 
   const [user, setUser] = useState<User | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -295,6 +292,37 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Appearance & Theme Card */}
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.sectionHeading, { color: theme.text }]}>Appearance & Theme</Text>
+        <TouchableOpacity
+          style={[styles.themeToggleButton, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}
+          onPress={toggleTheme}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actionRowLeft}>
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={20}
+              color={isDark ? '#EAB308' : '#4F46E5'}
+            />
+            <View>
+              <Text style={[styles.themeToggleText, { color: theme.text }]}>
+                {isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              </Text>
+              <Text style={[styles.themeToggleSubtext, { color: theme.textMuted }]}>
+                {isDark ? 'Warm Parchment / Cream' : 'GitHub Dark / Emerald'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.currentThemePill, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.currentThemePillText, { color: theme.tint }]}>
+              {isDark ? 'DARK' : 'LIGHT'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* Account & App Actions Card */}
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.sectionHeading, { color: theme.text }]}>Account & Storage</Text>
@@ -492,5 +520,33 @@ const styles = StyleSheet.create({
   actionRowText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  themeToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  themeToggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  themeToggleSubtext: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  currentThemePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  currentThemePillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });

@@ -6,14 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  useColorScheme,
   Alert,
   Modal,
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import Colors from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { AcademicAPI } from '@/src/api/academic';
 import { Assignment, StudyLog, Semester, Course, AcademicProfile } from '@/src/types';
 import {
@@ -52,8 +51,7 @@ function getCountdown(dueDate: string | null) {
 }
 
 export default function PlannerScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const { colors: theme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<'assignments' | 'study' | 'prediction' | 'retakes'>('assignments');
   const [refreshing, setRefreshing] = useState(false);

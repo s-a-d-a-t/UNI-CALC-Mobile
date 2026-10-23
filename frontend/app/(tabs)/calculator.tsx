@@ -5,7 +5,6 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  useColorScheme,
   Alert,
   TextInput,
   RefreshControl,
@@ -13,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import Colors from '@/constants/Colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { Semester, Course, CourseCategory, CourseStatus } from '@/src/types';
 import {
   calculateSemesterStats,
@@ -28,9 +27,7 @@ import {
 import { AcademicAPI } from '@/src/api/academic';
 
 export default function CalculatorScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const { isDark, colors: theme } = useTheme();
 
   const [semesters, setSemesters] = useState<Semester[]>([]);
   const [refreshing, setRefreshing] = useState(false);

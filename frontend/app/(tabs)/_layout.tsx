@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme, Pressable, View, Text, Image, StyleSheet } from 'react-native';
-import Colors from '@/constants/Colors';
+import { Pressable, View, Text, Image, StyleSheet } from 'react-native';
+import { useTheme } from '@/src/context/ThemeContext';
 import { AcademicAPI } from '@/src/api/academic';
 import { calculateGlobalStats, formatGpa } from '@/src/lib/gpa';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const { isDark, colors: theme, toggleTheme } = useTheme();
   const [cgpa, setCgpa] = useState('0.00');
 
   useEffect(() => {
@@ -71,9 +70,26 @@ export default function TabLayout() {
                 {cgpa} CGPA
               </Text>
             </View>
+
+            {/* Dedicated Theme Toggle Button in Header */}
+            <Pressable
+              onPress={toggleTheme}
+              style={({ pressed }) => [
+                styles.themeToggleHeaderBtn,
+                { backgroundColor: theme.card, borderColor: theme.border, opacity: pressed ? 0.6 : 1 },
+              ]}
+              accessibilityLabel="Toggle Theme"
+            >
+              <Ionicons
+                name={isDark ? 'sunny' : 'moon'}
+                size={15}
+                color={isDark ? '#EAB308' : '#4F46E5'}
+              />
+            </Pressable>
+
             <Link href="/modal" asChild>
               <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, marginLeft: 8 })}>
-                <Ionicons name="person-circle-outline" size={26} color={theme.text} />
+                <Ionicons name="person-circle-outline" size={24} color={theme.text} />
               </Pressable>
             </Link>
           </View>
@@ -179,5 +195,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  themeToggleHeaderBtn: {
+    marginLeft: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
