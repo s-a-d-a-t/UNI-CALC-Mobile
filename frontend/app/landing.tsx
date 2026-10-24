@@ -60,7 +60,7 @@ export default function LandingScreen() {
           />
         </View>
 
-        {/* Right Actions: Theme Toggle + Sign In / Get Started */}
+        {/* Right Actions: Theme Toggle + Sign In */}
         <View style={styles.navActions}>
           <TouchableOpacity
             onPress={toggleTheme}
@@ -77,18 +77,10 @@ export default function LandingScreen() {
 
           <TouchableOpacity
             onPress={handleLogin}
-            style={[styles.signInNavBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.signInNavText, { color: theme.text }]}>Sign In</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={handleGetStarted}
-            style={[styles.getStartedNavBtn, { backgroundColor: theme.tint }]}
+            style={[styles.signInNavBtn, { backgroundColor: theme.tint }]}
             activeOpacity={0.8}
           >
-            <Text style={styles.getStartedNavText}>Get Started</Text>
+            <Text style={styles.signInNavText}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -309,21 +301,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signInNavBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 9,
-    borderWidth: 1,
   },
   signInNavText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  getStartedNavBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 13,
-    borderRadius: 9,
-  },
-  getStartedNavText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
