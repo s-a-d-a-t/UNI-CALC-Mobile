@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Tabs, Link } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, View, Text, Image, StyleSheet } from 'react-native';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -86,12 +86,6 @@ export default function TabLayout() {
                 color={isDark ? '#EAB308' : '#4F46E5'}
               />
             </Pressable>
-
-            <Link href="/modal" asChild>
-              <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, marginLeft: 8 })}>
-                <Ionicons name="person-circle-outline" size={24} color={theme.text} />
-              </Pressable>
-            </Link>
           </View>
         ),
       }}>
