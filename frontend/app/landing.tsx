@@ -9,6 +9,7 @@ import {
   StatusBar,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -17,6 +18,7 @@ const { width } = Dimensions.get('window');
 
 export default function LandingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { isDark, colors: theme, toggleTheme } = useTheme();
 
   const handleGetStarted = () => {
@@ -38,26 +40,28 @@ export default function LandingScreen() {
         backgroundColor={theme.background}
       />
 
-      {/* Top Navbar */}
-      <View style={[styles.navbar, { borderBottomColor: theme.border, backgroundColor: isDark ? 'rgba(13,17,23,0.95)' : 'rgba(250,246,238,0.95)' }]}>
-        <View style={styles.brandRow}>
-          <View style={[styles.logoBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Image
-              source={require('../assets/images/logo1.png')}
-              style={styles.logoImg}
-              resizeMode="cover"
-            />
-          </View>
-          <View style={styles.brandTextCol}>
-            <Text style={[styles.brandTitle, { color: theme.text }]}>UniCalc Ethio</Text>
-            <Text style={[styles.brandSubtitle, { color: theme.textMuted }]}>
-              GPA TRACKER & ANALYTICS
-            </Text>
-          </View>
+      {/* Top Navbar - Clean, mobile-friendly spacing without crowded logo name */}
+      <View
+        style={[
+          styles.navbar,
+          {
+            paddingTop: insets.top ? insets.top + 6 : 14,
+            borderBottomColor: theme.border,
+            backgroundColor: isDark ? 'rgba(13,17,23,0.95)' : 'rgba(250,246,238,0.95)',
+          },
+        ]}
+      >
+        {/* Sleek Logo Icon on the Left */}
+        <View style={[styles.logoBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Image
+            source={require('../assets/images/logo1.png')}
+            style={styles.logoImg}
+            resizeMode="cover"
+          />
         </View>
 
+        {/* Right Actions: Theme Toggle + Sign In / Get Started */}
         <View style={styles.navActions}>
-          {/* Dedicated Theme Toggle Button */}
           <TouchableOpacity
             onPress={toggleTheme}
             style={[styles.themeToggleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
@@ -66,37 +70,44 @@ export default function LandingScreen() {
           >
             <Ionicons
               name={isDark ? 'sunny' : 'moon'}
-              size={18}
+              size={17}
               color={isDark ? '#EAB308' : '#4F46E5'}
             />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleLogin} style={styles.signInBtn}>
-            <Text style={[styles.signInText, { color: theme.textMuted }]}>Sign In</Text>
+          <TouchableOpacity
+            onPress={handleLogin}
+            style={[styles.signInNavBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.signInNavText, { color: theme.text }]}>Sign In</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             onPress={handleGetStarted}
-            style={[styles.getStartedNavBtn, { backgroundColor: theme.tint }]}>
+            style={[styles.getStartedNavBtn, { backgroundColor: theme.tint }]}
+            activeOpacity={0.8}
+          >
             <Text style={styles.getStartedNavText}>Get Started</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 24, 36) }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Hero Section */}
         <View style={styles.heroSection}>
           {/* Scale Compliance Badge */}
           <View style={[styles.scaleBadge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}>
-            <Ionicons name="school" size={14} color={theme.tint} style={{ marginRight: 6 }} />
+            <Ionicons name="school" size={13} color={theme.tint} style={{ marginRight: 6 }} />
             <Text style={[styles.scaleBadgeText, { color: theme.tint }]}>
               STANDARD ETHIOPIAN SCALE (4.0)
             </Text>
           </View>
 
-          {/* Headline */}
+          {/* Headline - Balanced for mobile screens */}
           <Text style={[styles.heroHeadline, { color: theme.text }]}>
             Empower Your Academic Path with{' '}
             <Text style={{ color: theme.tint }}>Precision Analytics</Text>
@@ -105,22 +116,25 @@ export default function LandingScreen() {
           {/* Subtitle */}
           <Text style={[styles.heroParagraph, { color: theme.textMuted }]}>
             A sophisticated academic management platform tailored for university students in Ethiopia.
-            Seamlessly organize semesters, project future credit hours, analyze academic performance curves,
-            and chart a structured path to graduation honours.
+            Organize semesters, forecast credit loads, analyze GPA trends, and chart honours.
           </Text>
 
-          {/* Action Buttons */}
+          {/* Action Buttons - Finger-friendly mobile touch targets */}
           <View style={styles.heroButtonCol}>
             <TouchableOpacity
               onPress={handleGetStarted}
-              style={[styles.primaryActionBtn, { backgroundColor: theme.tint }]}>
+              activeOpacity={0.85}
+              style={[styles.primaryActionBtn, { backgroundColor: theme.tint }]}
+            >
               <Text style={styles.primaryActionBtnText}>Start Free Tracking</Text>
               <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleLogin}
-              style={[styles.secondaryActionBtn, { borderColor: theme.border, backgroundColor: theme.card }]}>
+              activeOpacity={0.85}
+              style={[styles.secondaryActionBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+            >
               <Text style={[styles.secondaryActionBtnText, { color: theme.text }]}>
                 Access Existing Profile
               </Text>
@@ -128,27 +142,27 @@ export default function LandingScreen() {
 
             <TouchableOpacity
               onPress={handleExploreGuest}
-              style={styles.guestLinkBtn}>
-              <Ionicons name="eye-outline" size={16} color={theme.textMuted} style={{ marginRight: 6 }} />
+              activeOpacity={0.7}
+              style={styles.guestLinkBtn}
+            >
+              <Ionicons name="eye-outline" size={15} color={theme.textMuted} style={{ marginRight: 6 }} />
               <Text style={[styles.guestLinkText, { color: theme.textMuted }]}>
                 Continue as Guest / Offline Preview
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Hero Illustration Card */}
-          <View style={[styles.heroIllustrationCard, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-            {/* Simulated window header bar */}
-            <View style={styles.windowHeader}>
-              <View style={styles.windowDots}>
-                <View style={[styles.dot, { backgroundColor: '#EF4444' }]} />
-                <View style={[styles.dot, { backgroundColor: '#F59E0B' }]} />
-                <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
-              </View>
-              <View style={[styles.windowAddress, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)', borderColor: theme.border }]}>
-                <Text style={[styles.windowAddressText, { color: theme.textMuted }]}>
-                  unicalc-ethio.org/dashboard
+          {/* Mobile-Adapted Dashboard Showcase Card */}
+          <View style={[styles.heroIllustrationCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderBar}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                <Text style={[styles.cardHeaderTitle, { color: theme.textMuted }]}>
+                  Live Academic Dashboard
                 </Text>
+              </View>
+              <View style={[styles.platformBadge, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
+                <Text style={[styles.platformBadgeText, { color: theme.tint }]}>HERQA 4.0</Text>
               </View>
             </View>
 
@@ -162,21 +176,21 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* Features Section */}
-        <View style={[styles.featuresSection, { backgroundColor: isDark ? 'rgba(22,27,34,0.4)' : 'rgba(244,239,230,0.5)', borderColor: theme.border }]}>
+        {/* Features Section - Maintained UI order with clean mobile rhythm */}
+        <View style={[styles.featuresSection, { backgroundColor: isDark ? 'rgba(22,27,34,0.35)' : 'rgba(244,239,230,0.45)', borderColor: theme.border }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Engineered for Academic Excellence
             </Text>
             <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
-              A suite of sophisticated, real-time tools built to help you measure, forecast, and elevate your performance.
+              Real-time tools built to measure, forecast, and elevate your university performance.
             </Text>
           </View>
 
           {/* Feature 1 */}
           <View style={[styles.featureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={[styles.featureIconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
-              <Ionicons name="calculator" size={24} color={theme.tint} />
+              <Ionicons name="calculator" size={22} color={theme.tint} />
             </View>
             <Text style={[styles.featureTitle, { color: theme.text }]}>
               Interactive Semester Manager
@@ -190,7 +204,7 @@ export default function LandingScreen() {
           {/* Feature 2 */}
           <View style={[styles.featureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={[styles.featureIconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
-              <Ionicons name="trending-up" size={24} color={theme.tint} />
+              <Ionicons name="trending-up" size={22} color={theme.tint} />
             </View>
             <Text style={[styles.featureTitle, { color: theme.text }]}>
               Advanced Trend Analysis
@@ -204,7 +218,7 @@ export default function LandingScreen() {
           {/* Feature 3 */}
           <View style={[styles.featureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={[styles.featureIconCircle, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
-              <Ionicons name="trophy" size={24} color={theme.tint} />
+              <Ionicons name="trophy" size={22} color={theme.tint} />
             </View>
             <Text style={[styles.featureTitle, { color: theme.text }]}>
               Target & Graduation Planner
@@ -220,7 +234,7 @@ export default function LandingScreen() {
         <View style={styles.complianceContainer}>
           <View style={[styles.complianceCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={[styles.shieldIconCircle, { backgroundColor: theme.badgeBg }]}>
-              <Ionicons name="shield-checkmark" size={32} color={theme.tint} />
+              <Ionicons name="shield-checkmark" size={30} color={theme.tint} />
             </View>
             <View style={[styles.complianceBadge, { backgroundColor: theme.badgeBg, borderColor: theme.border }]}>
               <Text style={[styles.complianceBadgeText, { color: theme.tint }]}>
@@ -232,8 +246,8 @@ export default function LandingScreen() {
             </Text>
             <Text style={[styles.complianceDesc, { color: theme.textMuted }]}>
               UniCalc Ethio aligns directly with standard policies used across universities in Ethiopia.
-              The scale rules map A/A+ to 4.0, A- to 3.75, B+ to 3.50, B to 3.00, down to F at 0.0 points.
-              Calculations reflect exact academic standings with complete mathematical integrity.
+              The scale rules map A/A+ to 4.0, A- to 3.75, B+ to 3.50, B to 3.00, down to F at 0.0 points
+              with complete mathematical integrity.
             </Text>
           </View>
         </View>
@@ -265,19 +279,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
   },
   logoBox: {
     width: 38,
     height: 38,
-    borderRadius: 10,
+    borderRadius: 11,
     borderWidth: 1,
     overflow: 'hidden',
     justifyContent: 'center',
@@ -287,23 +295,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  brandTextCol: {
-    justifyContent: 'center',
-  },
-  brandTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  brandSubtitle: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
   navActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   themeToggleBtn: {
     width: 36,
@@ -313,18 +308,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  signInBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+  signInNavBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    borderWidth: 1,
   },
-  signInText: {
-    fontSize: 13,
+  signInNavText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   getStartedNavBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingHorizontal: 13,
+    borderRadius: 9,
   },
   getStartedNavText: {
     color: '#FFFFFF',
@@ -332,55 +329,56 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 36,
   },
   heroSection: {
     paddingHorizontal: 18,
-    paddingTop: 28,
+    paddingTop: 22,
     alignItems: 'center',
   },
   scaleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 16,
-  },
-  scaleBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  heroHeadline: {
-    fontSize: 30,
-    fontWeight: '900',
-    textAlign: 'center',
-    lineHeight: 38,
-    letterSpacing: -0.5,
     marginBottom: 14,
   },
+  scaleBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  heroHeadline: {
+    fontSize: 26,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 33,
+    letterSpacing: -0.4,
+    marginBottom: 10,
+  },
   heroParagraph: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: 'center',
     fontWeight: '500',
-    maxWidth: 520,
-    marginBottom: 24,
+    maxWidth: 440,
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
   heroButtonCol: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     gap: 10,
-    marginBottom: 28,
+    marginBottom: 24,
   },
   primaryActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 13,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -389,14 +387,14 @@ const styles = StyleSheet.create({
   },
   primaryActionBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
   secondaryActionBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 13,
     borderWidth: 1,
   },
   secondaryActionBtnText: {
@@ -407,54 +405,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   guestLinkText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
   heroIllustrationCard: {
     width: '100%',
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     padding: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  windowHeader: {
+  cardHeaderBar: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
     paddingHorizontal: 4,
-    gap: 8,
   },
-  windowDots: {
+  cardHeaderLeft: {
     flexDirection: 'row',
-    gap: 5,
+    alignItems: 'center',
+    gap: 6,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
-  windowAddress: {
-    flex: 1,
+  cardHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  platformBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
-    paddingVertical: 3,
-    alignItems: 'center',
   },
-  windowAddressText: {
-    fontSize: 10,
-    fontWeight: '700',
+  platformBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   imageWrapper: {
     width: '100%',
-    height: 200,
-    borderRadius: 14,
+    height: 190,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
   },
@@ -463,105 +465,105 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   featuresSection: {
-    paddingVertical: 28,
-    paddingHorizontal: 18,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    marginTop: 10,
+    marginTop: 8,
   },
   sectionHeader: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
     letterSpacing: -0.3,
-    marginBottom: 6,
+    marginBottom: 5,
   },
   sectionSubtitle: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11.5,
+    lineHeight: 17,
     textAlign: 'center',
     fontWeight: '600',
-    maxWidth: 400,
+    maxWidth: 360,
   },
   featureCard: {
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 18,
-    marginBottom: 12,
+    padding: 16,
+    marginBottom: 10,
   },
   featureIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 11,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   featureTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   featureDesc: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '500',
   },
   complianceContainer: {
-    paddingHorizontal: 18,
-    paddingVertical: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
   },
   complianceCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 20,
+    padding: 18,
     alignItems: 'center',
   },
   shieldIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  complianceBadge: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
     marginBottom: 10,
   },
-  complianceBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  complianceTitle: {
-    fontSize: 18,
-    fontWeight: '900',
+  complianceBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
     marginBottom: 8,
   },
+  complianceBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  complianceTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
   complianceDesc: {
-    fontSize: 12,
-    lineHeight: 19,
+    fontSize: 11.5,
+    lineHeight: 18,
     textAlign: 'center',
     fontWeight: '500',
   },
   footer: {
     borderTopWidth: 1,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   footerCopyright: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   footerLinksRow: {
@@ -570,13 +572,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   footerCredit: {
-    fontSize: 11,
+    fontSize: 10.5,
   },
   footerDot: {
-    fontSize: 11,
+    fontSize: 10.5,
   },
   footerLink: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
 });
