@@ -8,7 +8,8 @@
     "scheme": "unicalcmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.unicalc.app"
     },
     "android": {
       "package": "com.unicalc.app",
@@ -43,9 +44,6 @@
         "asyncRoutes": {
           "web": true
         }
-      },
-      "eas": {
-        "projectId": "4e9e3ca8-3db0-4d73-b09d-e3fd92b12aae"
       }
     }
   }
