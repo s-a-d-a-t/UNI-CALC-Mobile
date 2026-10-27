@@ -12,7 +12,7 @@ export {
 } from 'expo-router';
 
 export const unstable_settings = {
-  anchor: 'landing',
+  initialRouteName: 'landing',
 };
 
 // Prevent splash from auto-hiding
@@ -66,7 +66,7 @@ function RootLayoutNav() {
 
   return (
     <NavigationThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack initialRouteName="landing" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="landing" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: false }} />
