@@ -4,7 +4,7 @@
     "slug": "unicalc-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo1.png",
+    "icon": "./assets/images/app-icon.png",
     "scheme": "unicalcmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -15,7 +15,7 @@
       "package": "com.unicalc.app",
       "adaptiveIcon": {
         "backgroundColor": "#FAF6EE",
-        "foregroundImage": "./assets/images/logo1.png"
+        "foregroundImage": "./assets/images/app-icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
